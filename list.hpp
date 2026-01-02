@@ -81,22 +81,22 @@ public:
               flagTAtlasHeight - flag_coords.y, 
               (float)16, (float)11};
 
-          uint8_t players = buf[pos++];
+          pos++; // little nudge
+
           uint8_t max_players = buf[pos++];
+          uint8_t players = buf[pos++];
 
           std::string a = std::to_string(players);
           std::string b = std::to_string(max_players);
+          std::string label = std::format("{}/{}", a, b);
 
-          const char *playrs_char = a.c_str();
-          const char *maxplr_char = b.c_str();
-
-          rooms.emplace_back(Room{name, id, country, Vector2{x,y}, playrs_char, maxplr_char, sourceRec});
+          rooms.emplace_back(Room{name, id, country, Vector2{x,y}, a.c_str(), b.c_str(), sourceRec, label});
           pos = next_entry;
         }
         curl_easy_cleanup(curl);
       } else {
         TraceLog(LOG_INFO, "Couldn't form a connection to HaxBall's servers!");
-        rooms.emplace_back(Room{"user_offline", "You're offline!", "na", Vector2{0,0},0,0, Rectangle{0,0,0,0}});
+        rooms.emplace_back(Room{"user_offline", "You're offline!", "na", Vector2{0,0},0,0, Rectangle{0,0,0,0}, ""});
       }
     }
     return rooms;

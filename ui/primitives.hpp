@@ -49,18 +49,20 @@ struct Room : public Button {
   std::string id;
   std::string country;
   Vector2 coords;
-  const char *players;
-  const char *max_players;
+  std::string players;
+  std::string max_players;
   Rectangle map_rec;
+  std::string player_label;
 
-  Room(std::string t, std::string i, std::string c, Vector2 d, const char *p, const char *max_p, Rectangle r)
+  Room(std::string t, std::string i, std::string c, Vector2 d, std::string p, std::string max_p, Rectangle r, std::string pl)
       : 
       id(std::move(i)),
       country(std::move(c)),
       coords(std::move(d)),
       players(std::move(p)),
       max_players(std::move(max_p)),
-      map_rec(std::move(r))
+      map_rec(std::move(r)),
+      player_label(std::move(pl))
   {
     this->txt = std::move(t);
   }
@@ -74,8 +76,16 @@ struct Room : public Button {
       DrawText(country.c_str(), rect.x - 18, rect.y + 1, fontSize, BLACK);
     }
 
-    DrawRectangle(rect.x + rect.width + 2, rect.y, 61, rect.height, LIGHTGRAY);
-    DrawText(max_players, rect.x + rect.width + 2, rect.y + 1, fontSize, BLACK);
+    int pclt_size = MeasureText(player_label.c_str(), fontSize);
+    int pcl_size = GetScreenWidth() - rect.width - rect.x - 4;
+    int pcl_x_pos = /*rect.x + rect.width + */(GetScreenWidth() - pcl_size - 2);
+
+    Rectangle player_count_rec = {(float)pcl_x_pos, rect.y, (float)pcl_size, rect.height};
+
+    DrawRectangleRec(player_count_rec, LIGHTGRAY);
+    DrawText(player_label.c_str(),
+             player_count_rec.x + player_count_rec.width - pclt_size - 2,
+             rect.y + 1, fontSize, BLACK);
     return Button::Draw(rect);
   }
 };

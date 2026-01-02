@@ -7,8 +7,9 @@ rayball is a very early work in progress reimplementation of the HaxBall client 
 
 ### todo list
 - [x] server list
-  - [ ] show player count
+  - [x] show player count
   - [ ] show distance
+  - [ ] emoji rendering
 - [ ] in-game clock
 - [ ] server joining
   - [ ] chat

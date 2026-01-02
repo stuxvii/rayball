@@ -7,12 +7,6 @@
 #include "ui/cursor.cpp"
 #include <string>
 
-void join(Room room) {
-    TraceLog(LOG_INFO, "%s, %s", room.players, room.max_players);
-    TraceLog(LOG_INFO, "%s, %s", std::to_string(room.coords.x).c_str(), std::to_string(room.coords.y).c_str());
-    TraceLog(LOG_INFO, "%s, %s", room.id.c_str(), room.country.c_str());
-}
-
 int main() {
     InitWindow(640, 480, "trail");
     HideCursor();
