@@ -16,3 +16,5 @@ rayball is a very early work in progress reimplementation of the HaxBall client 
 - [ ] better ui
 - [ ] better ux
 - [ ] nav bar
+
+###### ***(If anyone is up to the challenge please help me setup crosscompilation from Linux to Windows)***
