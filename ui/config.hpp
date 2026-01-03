@@ -1,12 +1,13 @@
 #include "raylib.h"
 #include <string>
 
-const std::string defaultConfigFile = "{\"FancyCursor\": true,\"ShowFlagImages\": true,\"ScrollingBackground\": true,\"FPS\": 240,\"Longitude\": 0.0,\"Latitude\": 0.0}";
+const std::string defaultConfigFile = "{\"FancyCursor\": true,\"ShowFlagImages\": true,\"ScrollingBackground\": true,\"HideLocked\": true,\"FPS\": 240,\"Longitude\": 0.0,\"Latitude\": 0.0}";
 
 namespace Config {
     inline bool ShowFlagImages = false;
     inline bool FancyCursor = true;
     inline bool ScrollingBackground = true;
+    inline bool HideLocked = false;
     inline int FPS = 240;
     inline int MaxFPS = 240;
     inline float Latitude = 0.0f;
@@ -21,6 +22,7 @@ namespace Layout {
     inline Vector2 flagSize = {19, 18};
     inline int playerCountWidth = 0;
     inline int distanceWidth = 0;
+    inline Font fonts[8*8] = { 0 };
 }
 
 namespace Style {
@@ -36,6 +38,7 @@ enum Settings {
     ShowFlags = 0,
     UseFancyCursor = 1,
     ScrollingBG = 2,
+    HideLocked = 3,
 };
 
 enum Screens {

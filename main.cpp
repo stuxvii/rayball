@@ -37,6 +37,7 @@ int main() {
             Config::FancyCursor         = obj.at("FancyCursor").get<bool>();
             Config::ShowFlagImages      = obj.at("ShowFlagImages").get<bool>();
             Config::ScrollingBackground = obj.at("ScrollingBackground").get<bool>();
+            Config::HideLocked          = obj.at("HideLocked").get<bool>();
             Config::FPS                 = obj.at("FPS").get<double>();
             Config::Longitude           = obj.at("Longitude").get<double>();
             Config::Latitude            = obj.at("Latitude").get<double>();
@@ -47,7 +48,7 @@ int main() {
 
     InitWindow(1280, 720, "rayball");
     SetWindowState(FLAG_WINDOW_RESIZABLE);
-    SetWindowMinSize(480, 360);
+    SetWindowMinSize(640, 360);
     Config::FancyCursor ? HideCursor() : ShowCursor();
     SetTargetFPS(Config::FPS);
 
@@ -84,8 +85,6 @@ int main() {
         .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
     };
 
-    Font fonts[8*8] = { 0 };
-
     Texture2D bg = LoadTextureFromImage(checkedIm);
     
     #ifdef USE_EMBEDDED_IMAGES
@@ -94,10 +93,10 @@ int main() {
         UnloadImage(flag_image);
 
         const Image arrows_image = LoadImageFromMemory(".png", res_img_arrows_png, res_img_arrows_png_len);
-        fonts[0] = LoadFontFromImage(arrows_image, MAGENTA, 32);
+        Layout::fonts[0] = LoadFontFromImage(arrows_image, MAGENTA, 32);
         UnloadImage(arrows_image);
     #else
-        fonts[0] = LoadFont("res/img/arrows.png");
+        Layout::fonts[0] = LoadFont("res/img/arrows.png");
         Layout::flagTextureAtlas = LoadTexture("res/img/flags.png");
     #endif
 
@@ -114,6 +113,7 @@ int main() {
         {"Flags", Config::ShowFlagImages},
         {"Fancy Cursor", Config::FancyCursor},
         {"Scrolling BG", Config::ScrollingBackground},
+        {"Hide Locked", Config::HideLocked},
     };
 
     std::vector<Button> list_actions = {
@@ -212,6 +212,9 @@ int main() {
                             case ScrollingBG:
                                 Config::ScrollingBackground = state;
                                 break;
+                            case HideLocked:
+                                Config::HideLocked = state;
+                                break;
                         }
                     }
                 }
@@ -224,17 +227,19 @@ int main() {
                 roomListY -= (Layout::buttonHeight * roomsPerPage) / 2;
                 roomListY += Layout::buttonHeight;
 
+                int visibleIndex = 0;
+
                 for (int i = (roomsPerPage * page); i < (roomsPerPage * (page+1)); i++) {
                     if (static_cast<size_t>(i) >= rooms.size()) break;
+                    if (Config::HideLocked && rooms[i].locked) continue;
                     Rectangle rect = {
                         static_cast<float>(roomListX),
-                        (float)(i - (page * roomsPerPage)) * (Layout::buttonHeight) + (float)roomListY,
+                        (float)roomListY + visibleIndex * Layout::buttonHeight,
                         static_cast<float>(list_width-64),
                         Layout::fontSize
                     };
-                    if (rooms[i].Draw(rect)) {
-                        //join(rooms[i]);
-                    }
+                    rooms[i].Draw(rect);
+                    visibleIndex++;
                 }
 
                 for (int i = 0; i < list_actions.size(); i++) {
@@ -243,16 +248,16 @@ int main() {
                     switch (i) {
                         case NextPage:
                             if (page + 1 > rooms.size() / roomsPerPage) break;
-                            active = list_actions[i].DrawFont(rect,fonts[0]);
+                            active = list_actions[i].DrawFont(rect,Layout::fonts[0]);
                             if (active) page++;
                         break;
                         case LastPage:
                             if (page < 1) break;
-                            active = list_actions[i].DrawFont(rect,fonts[0]);
+                            active = list_actions[i].DrawFont(rect,Layout::fonts[0]);
                             if (active) page--;
                         break;
                         case Refresh:
-                            active = list_actions[i].DrawFont(rect,fonts[0]);
+                            active = list_actions[i].DrawFont(rect,Layout::fonts[0]);
                             if (active)
                             {
                                 rooms = HaxballParser::fetchRooms(room_api_link);

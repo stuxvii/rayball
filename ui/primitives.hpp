@@ -73,13 +73,6 @@ struct Room : public Button {
   }
 
   bool Draw(Rectangle rect) override {
-    Rectangle flagBGRect = {
-      rect.x + rect.width + Layout::spacing*2 + Layout::playerCountWidth,
-      rect.y,
-      Layout::flagSize.y+Layout::distanceWidth,
-      rect.height
-    };
-
     int pcl_offset = rect.width + rect.x + Layout::spacing;
     Rectangle player_count_rec = {(float)pcl_offset, rect.y, (float)Layout::playerCountWidth, rect.height};
 
@@ -88,6 +81,12 @@ struct Room : public Button {
              player_count_rec.x + Layout::spacing,
              rect.y + Layout::spacing, Layout::fontSize, Style::primaryColor);
 
+    Rectangle flagBGRect = {
+      rect.x + rect.width + Layout::spacing*2 + Layout::playerCountWidth,
+      rect.y,
+      Layout::flagSize.y+Layout::distanceWidth,
+      rect.height
+    };
 
     DrawRectangleRec(flagBGRect, Style::secondaryColor);
 
@@ -97,6 +96,20 @@ struct Room : public Button {
       DrawText(country.c_str(), flagBGRect.x + Layout::spacing, rect.y + Layout::spacing, Layout::fontSize, Style::primaryColor);
     }
     DrawText(std::format("{}km", round(distance_km)).c_str(), Layout::flagSize.x + flagBGRect.x, rect.y + Layout::spacing, Layout::fontSize, Style::primaryColor);
+
+
+    Rectangle lockBGRect = {
+      rect.x + rect.width + Layout::spacing*3 + Layout::playerCountWidth + flagBGRect.width,
+      rect.y,
+      Layout::fontSize,
+      rect.height
+    };
+    DrawRectangleRec(lockBGRect, Style::secondaryColor);
+
+    if (locked) {
+      DrawTextEx(Layout::fonts[0], "#", Vector2{lockBGRect.x, lockBGRect.y}, Layout::fontSize, 0, Style::primaryColor);
+    }
+
 
     return Button::Draw(rect);
   }
