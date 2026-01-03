@@ -166,7 +166,7 @@ int main() {
             bool active;
             switch (i) {
                 case RayballLogo:
-                    rect = {(float)Layout::spacing,0,(float)navbarButtonSizes[RayballLogo],(float)Layout::buttonHeight};
+                    rect = {(float)0,0,(float)navbarButtonSizes[RayballLogo],(float)Layout::buttonHeight};
                     active = navbarActions[i].Draw(rect);
                     if (active) system("xdg-open https://github.com/stuxvii/rayball");
                     break;

@@ -14,7 +14,7 @@ namespace Config {
 }
 
 namespace Layout {
-    inline float fontSize = 10;
+    inline float fontSize = 13;
     inline int spacing = 1;
     inline int buttonHeight = fontSize + spacing;
     inline Texture2D flagTextureAtlas;
