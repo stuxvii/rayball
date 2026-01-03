@@ -4,17 +4,64 @@
     #include "res/img_h/arrows.h"
 #endif
 #include "list.hpp"
+#include "extlib/picojson.hpp"
 #include "ui/cursor.cpp"
 #include <string>
+#include <algorithm>
+#include <fstream>
+#include <chrono>
+
+std::string current_time_hms()
+{
+    using namespace std::chrono;
+    const auto now = system_clock::now();
+    return std::format("{:%H:%M:%S}", floor<seconds>(now));
+}
 
 int main() {
-    InitWindow(640, 480, "trail");
-    HideCursor();
-    SetTargetFPS(FPS);
+    std::string filePath = "rayball_config.json";
+    std::ifstream file(filePath);
 
-    const char * room_api_link = "https://html5.haxball.com/rs/api/list";
+    if (!file.is_open()) {
+        TraceLog(LOG_WARNING, "Couldn't open configuration file or wasn't found! Writing a new one now.");
+        std::ofstream out(filePath);
+        out << defaultConfigFile;
+        out.close();
+    } else {
+        std::string config;
+        getline(file, config);
+        picojson::value v;
+        std::string err = picojson::parse(v, config);
+        if (err.empty()) {
+            const auto& obj = v.get<picojson::object>();
+            Config::FancyCursor         = obj.at("FancyCursor").get<bool>();
+            Config::ShowFlagImages      = obj.at("ShowFlagImages").get<bool>();
+            Config::ScrollingBackground = obj.at("ScrollingBackground").get<bool>();
+            Config::FPS                 = obj.at("FPS").get<double>();
+            Config::Longitude           = obj.at("Longitude").get<double>();
+            Config::Latitude            = obj.at("Latitude").get<double>();
+        } else {
+            TraceLog(LOG_WARNING, "Couldn't parse configuration file! Please check that it is properly formatted.");
+        }
+    }
+
+    InitWindow(1280, 720, "rayball");
+    SetWindowState(FLAG_WINDOW_RESIZABLE);
+    SetWindowMinSize(480, 360);
+    Config::FancyCursor ? HideCursor() : ShowCursor();
+    SetTargetFPS(Config::FPS);
+
+    const char * room_api_link = "https://haxball.com/rs/api/list";
     auto rooms = HaxballParser::fetchRooms(room_api_link);
-    
+
+    std::sort(rooms.begin(), rooms.end(),
+              [](const Room& a, const Room& b) {
+                  return a.distance_km < b.distance_km;
+            });
+
+    Layout::playerCountWidth = MeasureText("WW/WW", Layout::fontSize); // have to account for widest
+    Layout::distanceWidth = MeasureText("10000KM", Layout::fontSize); // ditto
+
     int width = 64;
     int height = 64;
 
@@ -24,8 +71,8 @@ int main() {
     {
         for (int x = 0; x < width; x++)
         {
-            if (((x/32+y/32)/1)%2 == 0) pixels[y*width + x] = Color{127, 170, 127, 255};
-            else pixels[y*width + x] = Color{0, 127, 0, 255};
+            if (((x/32+y/32)/1)%2 == 0) pixels[y*width + x] = Style::bgColor1;
+            else pixels[y*width + x] = Style::bgColor2;
         }
     }
 
@@ -43,7 +90,7 @@ int main() {
     
     #ifdef USE_EMBEDDED_IMAGES
         const Image flag_image = LoadImageFromMemory(".png", flags_png, flags_png_len);
-        flagTextureAtlas = LoadTextureFromImage(flag_image);
+        Layout::flagTextureAtlas = LoadTextureFromImage(flag_image);
         UnloadImage(flag_image);
 
         const Image arrows_image = LoadImageFromMemory(".png", res_img_arrows_png, res_img_arrows_png_len);
@@ -51,110 +98,180 @@ int main() {
         UnloadImage(arrows_image);
     #else
         fonts[0] = LoadFont("res/img/arrows.png");
-        flagTextureAtlas = LoadTexture("res/img/flags.png");
+        Layout::flagTextureAtlas = LoadTexture("res/img/flags.png");
     #endif
 
     SetTextureFilter(bg, TEXTURE_FILTER_BILINEAR);
     SetTextureWrap(bg, TEXTURE_WRAP_REPEAT);
 
     int page = 0;
-    int roomsPerPage = 30;
+    int roomsPerPage = 22;
     float scroll = 0;
     
     Rectangle ShowFlagImagesToggleRect = {0, 48, 128, 24};
 
     std::vector<ToggleButton> settings = {
-        {"FPS Limit", true},
-        {"Flags", true},
-        {"Fancy Cursor", true}
+        {"Flags", Config::ShowFlagImages},
+        {"Fancy Cursor", Config::FancyCursor},
+        {"Scrolling BG", Config::ScrollingBackground},
     };
 
-    Button next_entry = {};
-    next_entry.txt = "$";
+    std::vector<Button> list_actions = {
+        {"!"},
+        {"$"},
+        {"\""}
+    };
 
-    Button last_entry = {};
-    last_entry.txt = "!";
+    std::vector<Button> navbarActions = {
+        {"rayball"},
+        {"server list"},
+        {"settings"},
+    };
 
-    Button refresh = {};
-    refresh.txt = "\"";
+    std::vector<int> navbarButtonSizes = {};
+
+    for (int i = 0; i < navbarActions.size(); i++) {
+        int textWidth = MeasureText(navbarActions[i].txt.c_str(), Layout::fontSize);
+        navbarButtonSizes.push_back(textWidth);
+    }
+    int list_width = 400;
+    int windowWidth = GetRenderWidth();
+    int windowHeight = GetRenderHeight();
+    int currentScreen = ServerList;
 
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
-        float fontSizeFloat = fontSize;
+        windowWidth = GetRenderWidth();
+        windowHeight = GetRenderHeight();
+
         BeginDrawing();
         ClearBackground(BLACK);
 
-        scroll -= 25 * dt;
-        if (scroll <= -bg.width) scroll = 0;
+        if (Config::ScrollingBackground) {
+            scroll -= 25 * dt;
+            if (scroll <= -bg.width) scroll = 0;
+        }
+
+        // NOTE: ALWAYS SET THE COLOR TO WHITE WHEN DRAWING TEXTURES!!!
         DrawTextureRec(bg, (Rectangle){ scroll, 0, (float)GetScreenWidth(), (float)GetScreenHeight() }, (Vector2){0,0}, WHITE);
 
-        for (int i = 0; i < settings.size(); i++) {
-            Rectangle this_rect = {0, static_cast<float>(32*i), 128, 24};
-            bool button_was_toggled = settings[i].isToggled;
-            bool state = settings[i].Draw(this_rect);
+        DrawRectangleRec((Rectangle){ 0, 0, (float)GetScreenWidth(), (float)Layout::buttonHeight}, Style::secondaryColor);
+        DrawText("rayball", Layout::spacing, Layout::spacing, Layout::fontSize, WHITE);
+        auto HMSTimeString = current_time_hms();
+        auto HMSTimeWidth = MeasureText(HMSTimeString.c_str(), Layout::fontSize);
+        DrawText(HMSTimeString.c_str(), windowWidth-Layout::spacing-HMSTimeWidth, Layout::spacing, Layout::fontSize, WHITE);
+
+        for (int i = 0; i < navbarActions.size(); i++) {
+            Rectangle rect;
+            bool active;
             switch (i) {
-                case ShowFlags:
-                    ShowFlagImages = state;
+                case RayballLogo:
+                    rect = {(float)Layout::spacing,0,(float)navbarButtonSizes[RayballLogo],(float)Layout::buttonHeight};
+                    active = navbarActions[i].Draw(rect);
+                    if (active) system("xdg-open https://github.com/stuxvii/rayball");
+                    break;
+                case ServerList:
+                    rect = {(float)navbarButtonSizes[RayballLogo]+Layout::spacing,0,(float)navbarButtonSizes[ServerList]+Layout::spacing,(float)Layout::buttonHeight};
+                    active = navbarActions[i].Draw(rect);
+                    if (active) currentScreen = ServerList;
                 break;
-                case UnlockFPS:
-                    if (button_was_toggled != state) {
-                        FPS = state ? 240 : 0;
-                        SetTargetFPS(FPS);
-                    }
+                case Configuration:
+                    rect = {(float)navbarButtonSizes[RayballLogo]+navbarButtonSizes[ServerList]+(Layout::spacing*i),0,(float)navbarButtonSizes[Configuration],(float)Layout::buttonHeight};
+                    active = navbarActions[i].Draw(rect);
+                    if (active) currentScreen = Configuration;
                 break;
-                case UseFancyCursor:
+            }
+        }
+
+        switch (currentScreen) {
+            case Configuration:
+                for (int i = 0; i < settings.size(); i++) {
+                    int configWindowX = windowWidth / 2;
+                    int configWindowY = windowHeight / 2;
+                    configWindowY -= Layout::buttonHeight / settings.size();
+                    configWindowX /= 1.25;
+
+                    Rectangle this_rect = {
+                        (float)configWindowX,
+                        (float)configWindowY + (i * Layout::buttonHeight),
+                        (float)configWindowX/2,
+                        (float)Layout::buttonHeight,
+                    };
+
+                    bool button_was_toggled = settings[i].isToggled;
+                    bool state = settings[i].Draw(this_rect);
                     if (button_was_toggled != state) {
-                        FancyCursor = state;
-                        if (FancyCursor) {
-                            HideCursor();
-                        } else {
-                            ShowCursor();
+                        switch (i) {
+                            case ShowFlags:
+                                Config::ShowFlagImages = state;
+                                break;
+                            case UseFancyCursor:
+                                Config::FancyCursor = state;
+                                state ? HideCursor() : ShowCursor();
+                                break;
+                            case ScrollingBG:
+                                Config::ScrollingBackground = state;
+                                break;
                         }
                     }
-                break;
-            }
-        }
+                }
+            break;
+            case ServerList:
+                int roomListX = windowWidth / 2;
+                int roomListY = windowHeight / 2;
+                roomListX -= list_width / 2;
+                roomListX -= Layout::flagSize.x;
+                roomListY -= (Layout::buttonHeight * roomsPerPage) / 2;
+                roomListY += Layout::buttonHeight;
 
-        int list_width = 400;
-        int x_pos = GetRenderWidth() - list_width;
-        int y_pos = GetRenderHeight();
+                for (int i = (roomsPerPage * page); i < (roomsPerPage * (page+1)); i++) {
+                    if (static_cast<size_t>(i) >= rooms.size()) break;
+                    Rectangle rect = {
+                        static_cast<float>(roomListX),
+                        (float)(i - (page * roomsPerPage)) * (Layout::buttonHeight) + (float)roomListY,
+                        static_cast<float>(list_width-64),
+                        Layout::fontSize
+                    };
+                    if (rooms[i].Draw(rect)) {
+                        //join(rooms[i]);
+                    }
+                }
 
-        for (int i = (roomsPerPage * page); i < (roomsPerPage * (page+1)); i++) {
-            if (static_cast<size_t>(i) >= rooms.size()) break;
-            Rectangle rect = {
-                static_cast<float>(x_pos), (float)(i - (page * roomsPerPage)) * (fontSize+2), static_cast<float>(list_width-64), fontSizeFloat
-            };
-            if (rooms[i].Draw(rect)) {
-                //join(rooms[i]);
-            }
-        }
-
-        if (page > 0) {
-            Rectangle rect = {static_cast<float>(x_pos-34), 0, fontSizeFloat, fontSizeFloat};
-            if (last_entry.DrawFont(rect,fonts[0])) {
-                page--;
-            }
-        }
-
-        if (page < rooms.size() / roomsPerPage) {
-            Rectangle rect = {static_cast<float>(x_pos-34), fontSizeFloat+2, fontSizeFloat, fontSizeFloat};
-            if (next_entry.DrawFont(rect,fonts[0])) {
-                page++;
-            }
-        }
-
-        if (rooms[0].id != "user_offline") {
-            Rectangle rect = {static_cast<float>(x_pos-34), (fontSizeFloat*2)+4, fontSizeFloat, fontSizeFloat};
-            if (refresh.DrawFont(rect,fonts[0])) {
-                rooms = HaxballParser::fetchRooms(room_api_link);
-            }
+                for (int i = 0; i < list_actions.size(); i++) {
+                    Rectangle rect = {static_cast<float>(roomListX-Layout::fontSize-Layout::spacing), static_cast<float>(i*Layout::buttonHeight)+roomListY, Layout::fontSize, Layout::fontSize};
+                    bool active;
+                    switch (i) {
+                        case NextPage:
+                            if (page + 1 > rooms.size() / roomsPerPage) break;
+                            active = list_actions[i].DrawFont(rect,fonts[0]);
+                            if (active) page++;
+                        break;
+                        case LastPage:
+                            if (page < 1) break;
+                            active = list_actions[i].DrawFont(rect,fonts[0]);
+                            if (active) page--;
+                        break;
+                        case Refresh:
+                            active = list_actions[i].DrawFont(rect,fonts[0]);
+                            if (active)
+                            {
+                                rooms = HaxballParser::fetchRooms(room_api_link);
+                                std::sort(rooms.begin(), rooms.end(),
+                                      [](const Room& a, const Room& b) {
+                                          return a.distance_km < b.distance_km;
+                                      });
+                            }
+                        break;
+                    }
+                }
+            break;
         }
 
         std::string fps = std::to_string(GetFPS());
-        DrawRectangle(0, y_pos-fontSize, MeasureText(fps.c_str(), fontSize), fontSize, Color{0,0,0, 127});
-        DrawText(fps.c_str(), 0, y_pos-fontSize, fontSize, GREEN);
+        DrawRectangle(0, windowHeight-Layout::fontSize, MeasureText(fps.c_str(), Layout::fontSize), Layout::fontSize, Color{0,0,0, 127});
+        DrawText(fps.c_str(), 0, windowHeight-Layout::fontSize, Layout::fontSize, GREEN);
 
-        if (FancyCursor) DrawCursorTrail(dt);
+        if (Config::FancyCursor) DrawCursorTrail(dt);
         EndDrawing();
     }
 

@@ -1,13 +1,15 @@
 #include "config.hpp"
 #include "flag_coords.hpp"
+#include "../extlib/harvesine/harvesine.cpp"
 #include <raylib.h>
 #include <string>
+#include <format>
 
 struct Button {
   std::string txt;
 
-  virtual ~Button() = default;
-
+  //virtual ~Button() = default;
+  Button(std::string t) : txt(std::move(t)) {}
 public:
   virtual bool Draw(Rectangle rect) {
     Vector2 m = GetMousePosition();
@@ -29,19 +31,19 @@ public:
 
 protected:
   virtual void Render(Rectangle rect, bool mouse_over) {
-    Color bg = mouse_over ? WHITE : LIGHTGRAY;
+    Color bg = mouse_over ? Style::hoverColor : Style::secondaryColor;
     DrawRectangleRec(rect, bg);
-    DrawText(txt.c_str(), rect.x + 5, rect.y + 2, fontSize, BLACK);
+    DrawText(txt.c_str(), rect.x + Layout::spacing, rect.y + Layout::spacing, Layout::fontSize, Style::primaryColor);
   }
   virtual void RenderFont(Rectangle rect, bool mouse_over, Font font) {
-    Color bg = mouse_over ? WHITE : LIGHTGRAY;
+    Color bg = mouse_over ? Style::hoverColor : Style::secondaryColor;
     DrawRectangleRec(rect, bg);
     DrawTextEx(font, txt.c_str(),
                Vector2{
                    rect.x,
                    rect.y,
                },
-               fontSize, 0, BLACK);
+               Layout::fontSize, 0, Style::primaryColor);
   }
 };
 
@@ -53,39 +55,49 @@ struct Room : public Button {
   std::string max_players;
   Rectangle map_rec;
   std::string player_label;
+  float distance_km;
+  bool locked;
 
-  Room(std::string t, std::string i, std::string c, Vector2 d, std::string p, std::string max_p, Rectangle r, std::string pl)
-      : 
+  Room(std::string t, std::string i, std::string c, Vector2 d, std::string p, std::string max_p, Rectangle r, std::string pl, bool l) :
+      Button(std::move(t)),
       id(std::move(i)),
       country(std::move(c)),
       coords(std::move(d)),
       players(std::move(p)),
       max_players(std::move(max_p)),
       map_rec(std::move(r)),
-      player_label(std::move(pl))
+      player_label(std::move(pl)),
+      locked(std::move(l))
   {
-    this->txt = std::move(t);
+    distance_km = calculate_distance(Config::Latitude, Config::Longitude, coords.x, coords.y);
   }
 
   bool Draw(Rectangle rect) override {
-    DrawRectangle(rect.x - 19, rect.y, 18, rect.height, LIGHTGRAY);
+    Rectangle flagBGRect = {
+      rect.x + rect.width + Layout::spacing*2 + Layout::playerCountWidth,
+      rect.y,
+      Layout::flagSize.y+Layout::distanceWidth,
+      rect.height
+    };
 
-    if (ShowFlagImages) {
-      DrawTextureRec(flagTextureAtlas, map_rec, (Vector2){rect.x - 18, rect.y + 1}, WHITE);
-    } else {
-      DrawText(country.c_str(), rect.x - 18, rect.y + 1, fontSize, BLACK);
-    }
+    int pcl_offset = rect.width + rect.x + Layout::spacing;
+    Rectangle player_count_rec = {(float)pcl_offset, rect.y, (float)Layout::playerCountWidth, rect.height};
 
-    int pclt_size = MeasureText(player_label.c_str(), fontSize);
-    int pcl_size = GetScreenWidth() - rect.width - rect.x - 4;
-    int pcl_x_pos = /*rect.x + rect.width + */(GetScreenWidth() - pcl_size - 2);
-
-    Rectangle player_count_rec = {(float)pcl_x_pos, rect.y, (float)pcl_size, rect.height};
-
-    DrawRectangleRec(player_count_rec, LIGHTGRAY);
+    DrawRectangleRec(player_count_rec, Style::secondaryColor);
     DrawText(player_label.c_str(),
-             player_count_rec.x + player_count_rec.width - pclt_size - 2,
-             rect.y + 1, fontSize, BLACK);
+             player_count_rec.x + Layout::spacing,
+             rect.y + Layout::spacing, Layout::fontSize, Style::primaryColor);
+
+
+    DrawRectangleRec(flagBGRect, Style::secondaryColor);
+
+    if (Config::ShowFlagImages) {
+      DrawTextureRec(Layout::flagTextureAtlas, map_rec, (Vector2){flagBGRect.x + Layout::spacing, rect.y + Layout::spacing}, WHITE);
+    } else {
+      DrawText(country.c_str(), flagBGRect.x + Layout::spacing, rect.y + Layout::spacing, Layout::fontSize, Style::primaryColor);
+    }
+    DrawText(std::format("{}km", round(distance_km)).c_str(), Layout::flagSize.x + flagBGRect.x, rect.y + Layout::spacing, Layout::fontSize, Style::primaryColor);
+
     return Button::Draw(rect);
   }
 };
@@ -93,7 +105,7 @@ struct Room : public Button {
 struct ToggleButton : public Button {
   bool isToggled = false;
 
-  ToggleButton(const std::string t, bool toggled = false) {
+  ToggleButton(const std::string t, bool toggled = false) : Button(std::move(t)) {
     txt = t;
     isToggled = toggled;
   }
@@ -106,8 +118,10 @@ struct ToggleButton : public Button {
   }
 
   void Render(Rectangle rect, bool mouse_over) override {
-    Color bg = isToggled ? GREEN : (mouse_over ? WHITE : LIGHTGRAY);
+    Color activeHoverBG = (mouse_over ? Style::hoverColor : Style::greenColor);
+    Color bg = isToggled ? activeHoverBG : (mouse_over ? Style::hoverColor : Style::secondaryColor);
+    Color fg = isToggled ? Style::secondaryColor : Style::primaryColor;
     DrawRectangleRec(rect, bg);
-    DrawText(txt.c_str(), rect.x + 5, rect.y + 5, 14, BLACK);
+    DrawText(txt.c_str(), rect.x + Layout::spacing, rect.y + Layout::spacing, Layout::fontSize, fg);
   }
 };

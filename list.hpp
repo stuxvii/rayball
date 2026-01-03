@@ -73,15 +73,15 @@ public:
             flag_coords = Vector2 {-80, -198};
           }
 
-          int flagTAtlasWidth = flagTextureAtlas.width;
-          int flagTAtlasHeight = flagTextureAtlas.height;
+          int flagTAtlasWidth = Layout::flagTextureAtlas.width;
+          int flagTAtlasHeight = Layout::flagTextureAtlas.height;
 
-          Rectangle sourceRec = {
+          Rectangle flagsRec = {
               flagTAtlasWidth - flag_coords.x, //offset fix
               flagTAtlasHeight - flag_coords.y, 
               (float)16, (float)11};
 
-          pos++; // little nudge
+          bool locked = buf[pos++];
 
           uint8_t max_players = buf[pos++];
           uint8_t players = buf[pos++];
@@ -90,13 +90,13 @@ public:
           std::string b = std::to_string(max_players);
           std::string label = std::format("{}/{}", a, b);
 
-          rooms.emplace_back(Room{name, id, country, Vector2{x,y}, a.c_str(), b.c_str(), sourceRec, label});
+          rooms.emplace_back(Room{name, id, country, Vector2{x,y}, a.c_str(), b.c_str(), flagsRec, label, locked});
           pos = next_entry;
         }
         curl_easy_cleanup(curl);
       } else {
         TraceLog(LOG_INFO, "Couldn't form a connection to HaxBall's servers!");
-        rooms.emplace_back(Room{"user_offline", "You're offline!", "na", Vector2{0,0},0,0, Rectangle{0,0,0,0}, ""});
+        rooms.emplace_back(Room{"user_offline", "You're offline!", "na", Vector2{0,0},"","", Rectangle{0,0,0,0}, "", true});
       }
     }
     return rooms;
