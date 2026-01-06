@@ -1,0 +1,19 @@
+[package]
+name = "rayball-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+haversine = "0.2.1"
+minreq = "2.14.1"
+raylib = { version = "5.5.1", default-features = false, features = ["opengl_21"] }
+tinyjson = "2.5.1"
+
+[profile.release]
+opt-level = "z"
+codegen-units = 1
+debug = false
+panic = "abort"
+lto = true
+strip = "symbols"
+target-cpu = "native"

@@ -1,3 +1,4 @@
-*.kra
-rayball
-*.json
+/target
+*.out
+*.cpp
+*~
