@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+<<<<<<< HEAD
 flate2 = "1.1.5"
+=======
+>>>>>>> main
 haversine = "0.2.1"
 minreq = "2.14.1"
 raylib = { version = "5.5.1", default-features = false, features = ["opengl_21"] }
@@ -16,4 +19,9 @@ codegen-units = 1
 debug = false
 panic = "abort"
 lto = true
+<<<<<<< HEAD
 strip = "symbols"
+=======
+strip = "symbols"
+target-cpu = "native"
+>>>>>>> main

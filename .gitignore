@@ -1,5 +1,9 @@
 /target
 *.out
 *.cpp
+<<<<<<< HEAD
 *~
 rb.cfg
+=======
+*~
+>>>>>>> main
