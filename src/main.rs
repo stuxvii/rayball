@@ -8,7 +8,7 @@ use raylib::prelude::*;
 use std::collections::HashMap;
 use std::fs::write;
 use std::sync::mpsc::{self, Sender};
-use std::thread;
+use std::{thread, vec};
 use tinyjson::JsonValue;
 
 macro_rules! cfg_val {
@@ -129,6 +129,7 @@ fn main() {
     let mut rooms_list: Vec<Room> = vec![];
     let mut current_screen: Screens = Screens::ServerList;
     let mut amount_of_dots_in_loading_text: f32 = 0.;
+    let reload_txt_width = rl.measure_text("Press R to refresh", layout::FONT_SIZE);
     while !rl.window_should_close() {
         let mut d = rl.begin_drawing(&rt);
         let fps = format!("{}", d.get_fps());
@@ -221,6 +222,8 @@ fn main() {
                 }
 
                 if rooms_fetched {
+                    d.draw_text("Press R to refresh", (screen_width/2)-reload_txt_width/2, screen_height-layout::FONT_SIZE, layout::FONT_SIZE, style::PRIMARY_COLOR);
+
                     let mut room_list_x = screen_width / 2;
                     let mut room_list_y = screen_height / 2;
                     room_list_x -= list_width / 2;
@@ -245,6 +248,12 @@ fn main() {
                             height: layout::BUTTON_HEIGHT,
                         };
                         if room.draw(&mut d, rect) {};
+                    }
+                                        
+                    if d.is_key_pressed(KeyboardKey::KEY_R) {
+                        rooms_list = vec![];
+                        rooms_fetching = false;
+                        rooms_fetched = false;
                     }
                 } else {
                     amount_of_dots_in_loading_text += 10. * dt;

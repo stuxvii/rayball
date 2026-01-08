@@ -17,4 +17,3 @@ debug = false
 panic = "abort"
 lto = true
 strip = "symbols"
-target-cpu = "native"
