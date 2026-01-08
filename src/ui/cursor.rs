@@ -1,8 +1,8 @@
 use raylib::prelude::*;
 use crate::cfg::style;
 
-const MAX_TRAIL_LENGTH: usize = 3;
-const TRAIL_DECAY: f32 = 0.025;
+const MAX_TRAIL_LENGTH: usize = 10;
+const TRAIL_DECAY: f32 = 0.05;
 const CURSOR_SIZE: f32 = 5.0;
 const IDLE_THRESHOLD: f32 = 10.0;
 const FADE_SPEED: f32 = 2.0;

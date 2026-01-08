@@ -1,7 +1,7 @@
 use haversine::{Location, distance};
 use raylib::prelude::*;
 
-use crate::{cfg::{self, params::SETTINGS}, ui::primitives::Room};
+use crate::{cfg::config, flags, ui::primitives::Room};
 
 pub fn fetch_rooms(
     flag_texture: &Texture2D,
@@ -12,26 +12,13 @@ pub fn fetch_rooms(
         Ok(res) => res.as_bytes().to_vec(),
         Err(e) => {
             println!("Couldn't form a connection to HaxBall's servers! Error: {}", e);
-
-            let empty_room: Room = Room::new(
-                "You're offline!".to_string(),
-                "user_offline".to_string(),
-                "na".to_string(),
-                Vector2::new(0.0, 0.0),
-                Rectangle::new(0.0, 0.0, 0.0, 0.0),
-                "".to_string(),
-                -1.0,
-                "".to_string(),
-                true,
-            );
-            rooms.push(empty_room);
             return rooms;
         }
     };
 
     let mut pos = 1;
     let buf = response;
-
+    let user_location = Vector2 {x: *config::LONGITUDE.lock().unwrap(), y: *config::LATITUDE.lock().unwrap()};
     while pos + 1 < buf.len() {
         if buf[pos] != 0x00 {
             break;
@@ -64,7 +51,7 @@ pub fn fetch_rooms(
         let y = read_f32(&buf, pos);
         pos += 4;
 
-        let flag_coords = cfg::flags::get_vector_from_code(&country);
+        let flag_coords = flags::get_vector_from_code(&country);
 
         let flags_rec = Rectangle::new(
             (flag_texture.width as f32) - flag_coords.x,
@@ -83,8 +70,8 @@ pub fn fetch_rooms(
 
         let distance_km: f64 = distance(
             Location {
-                latitude: SETTINGS.read().unwrap().latitude as f64,
-                longitude: SETTINGS.read().unwrap().longitude as f64,
+                latitude: user_location.y as f64,
+                longitude: user_location.x as f64
             },
             Location {
                 latitude: x as f64,
@@ -92,6 +79,7 @@ pub fn fetch_rooms(
             },
             haversine::Units::Kilometers,
         );
+
         let distance_text = format!("{}km", distance_km.round());
 
         let room: Room = Room::new(
