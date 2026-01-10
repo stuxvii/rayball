@@ -67,7 +67,7 @@ impl ButtonContent for Button {
         d.draw_rectangle_rec(rect, bg_color);
 
         let mut text_x = rect.x as i32;
-        if *config::CENTER_TEXT.lock().unwrap() {
+        if cfg_val!(CENTER_TEXT) {
             text_x += (rect.width as i32 / 2) - (d.measure_text(&self.text, layout::FONT_SIZE) / 2);
         } else {
             text_x += layout::SPACING as i32 * 2;
@@ -90,7 +90,7 @@ impl ButtonContent for Room {
         let bg_color = Interaction::resolve_color(mouse_over, false);
         d.draw_rectangle_rec(rect, bg_color);
         let mut txt_x: f32 = rect.x;
-        if *config::CENTER_TEXT.lock().unwrap() {
+        if cfg_val!(CENTER_TEXT) {
             txt_x = rect.x + rect.width / 2.;
             txt_x -= (d.measure_text(&self.text, layout::FONT_SIZE) / 2 )as f32;
         }
@@ -116,7 +116,7 @@ impl ButtonContent for Room {
         );
         d.draw_rectangle_rec(flag_bg_rect, style::SECONDARY_COLOR);
 
-        if *config::SHOW_FLAG_IMAGES.lock().unwrap(){
+        if cfg_val!(SHOW_FLAG_IMAGES) {
             let position = Vector2 {
                 x: flag_bg_rect.x + layout::SPACING,
                 y: rect.y + layout::SPACING,
@@ -291,7 +291,7 @@ impl ToggleButton {
         d.draw_rectangle_rec(rect, bg);
 
         let mut text_x = rect.x as i32;
-        if *config::CENTER_TEXT.lock().unwrap() {
+        if cfg_val!(CENTER_TEXT) {
             text_x += (rect.width as i32 / 2) - (d.measure_text(&self.text, layout::FONT_SIZE) / 2);
         } else {
             text_x += layout::SPACING as i32 * 2;

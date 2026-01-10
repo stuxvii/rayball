@@ -1,24 +1,26 @@
 use haversine::{Location, distance};
-use raylib::prelude::*;
+use minreq::Response;
+use raylib::{prelude::*};
 
 use crate::{cfg::config, flags, ui::primitives::Room};
 
 pub fn fetch_rooms(
     flag_texture: &Texture2D,
-) -> Vec<Room> {
+) -> Result<Vec<Room>, std::string::String> {
     let mut rooms = Vec::new();
     
-    let response = match minreq::get("http://haxball.com/rs/api/list").send() {
-        Ok(res) => res.as_bytes().to_vec(),
+    let fetch: Result<Response, minreq::Error> =  minreq::get("http://haxball.com/rs/api/list").send();
+    let response: Vec<u8>;
+    match fetch {
+        Ok(res) => {response = res.as_bytes().to_vec();},
         Err(e) => {
-            println!("Couldn't form a connection to HaxBall's servers! Error: {}", e);
-            return rooms;
+            return Err(format!("{}", e))
         }
     };
 
     let mut pos = 1;
     let buf = response;
-    let user_location = Vector2 {x: *config::LONGITUDE.lock().unwrap(), y: *config::LATITUDE.lock().unwrap()};
+    let user_location = Vector2 {x: cfg_val!(LONGITUDE), y: cfg_val!(LATITUDE)};
     while pos + 1 < buf.len() {
         if buf[pos] != 0x00 {
             break;
@@ -99,7 +101,7 @@ pub fn fetch_rooms(
 
     rooms.sort_by(|a, b| a.distance_km.partial_cmp(&b.distance_km).unwrap());
     //rooms.reverse();
-    rooms
+    Ok(rooms)
 }
 
 fn read_f32(data: &[u8], pos: usize) -> f32 {

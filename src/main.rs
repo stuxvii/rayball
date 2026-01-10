@@ -1,9 +1,8 @@
-use rayball_rs::cfg::{self, layout, style, config};
+use rayball_rs::cfg::{layout, style, config};
 use rayball_rs::net::rooms;
 use rayball_rs::ui::cursor::CursorTrail;
 use rayball_rs::ui::primitives::{IconButton, Room, ToggleButton};
-use rayball_rs::{FLAGS_SPRITESHEET, ICONS_SPRITESHEET, Screens, Settings, load_settings, load_spritesheets};
-use raylib::ffi::SetTextureWrap;
+use rayball_rs::*;
 use raylib::prelude::*;
 use std::collections::HashMap;
 use std::fs::write;
@@ -11,46 +10,40 @@ use std::sync::mpsc::{self, Sender};
 use std::{thread, vec};
 use tinyjson::JsonValue;
 
-macro_rules! cfg_val {
-    ($field:expr) => { *$field.lock().unwrap() };
-}
-
 fn save_config() {
     let mut map = HashMap::new();
 
-    map.insert("scrolling_bg".to_string(), cfg_val!(cfg::config::SCROLLING_BACKGROUND).into());
-    map.insert("show_flags".to_string(), cfg_val!(cfg::config::SHOW_FLAG_IMAGES).into());
-    map.insert("fancy_cursor".to_string(), cfg_val!(cfg::config::FANCY_CURSOR).into());
-    map.insert("center_text".to_string(), cfg_val!(cfg::config::CENTER_TEXT).into());
-    map.insert("show_fps".to_string(), cfg_val!(cfg::config::SHOW_FPS).into());
+    map.insert("scrolling_bg".to_string(), cfg_val!(SCROLLING_BACKGROUND).into());
+    map.insert("show_flags".to_string(), cfg_val!(SHOW_FLAG_IMAGES).into());
+    map.insert("fancy_cursor".to_string(), cfg_val!(FANCY_CURSOR).into());
+    map.insert("center_text".to_string(), cfg_val!(CENTER_TEXT).into());
+    map.insert("show_fps".to_string(), cfg_val!(SHOW_FPS).into());
     
-    map.insert("longitude".to_string(), JsonValue::Number(cfg_val!(cfg::config::LONGITUDE) as f64));
-    map.insert("latitude".to_string(), JsonValue::Number(cfg_val!(cfg::config::LATITUDE) as f64));
-    map.insert("fps".to_string(), JsonValue::Number(cfg_val!(cfg::config::FPS) as f64));
+    map.insert("longitude".to_string(), JsonValue::Number(cfg_val!(LONGITUDE) as f64));
+    map.insert("latitude".to_string(), JsonValue::Number(cfg_val!(LATITUDE) as f64));
+    map.insert("fps".to_string(), JsonValue::Number(cfg_val!(FPS) as f64));
 
     let root = JsonValue::Object(map);
     let _ = write("./rb.cfg", root.stringify().unwrap());
 }
 
-fn thread_fetch(tx: Sender<Vec<Room>>) {
+fn thread_fetch(tx: Sender<Result<Vec<Room>, String>>) {
     let tx_clone = tx.clone();
     thread::spawn(move || {
-        let data: Vec<Room> = rooms::fetch_rooms(FLAGS_SPRITESHEET.get().unwrap());
+        let data: Result<Vec<Room>, String> = rooms::fetch_rooms(FLAGS_SPRITESHEET.get().unwrap());
         let _ = tx_clone.send(data);
     });
 }
 
 fn main() {
-    *cfg::config::SHOW_FLAG_IMAGES.lock().unwrap() = true;
-    *cfg::config::FANCY_CURSOR.lock().unwrap() = true;
-    *cfg::config::SCROLLING_BACKGROUND.lock().unwrap() = true;
-    *cfg::config::SHOW_FPS.lock().unwrap() = false;
-    *cfg::config::CENTER_TEXT.lock().unwrap() = false;
-    *cfg::config::FPS.lock().unwrap() = 60;
-
-    // lima peru because idk
-    *cfg::config::LATITUDE.lock().unwrap() = -12.0336;
-    *cfg::config::LONGITUDE.lock().unwrap() = -77.0215;
+    cfg_val!(SHOW_FLAG_IMAGES) = true;
+    cfg_val!(FANCY_CURSOR) = true;
+    cfg_val!(SCROLLING_BACKGROUND) = true;
+    cfg_val!(SHOW_FPS) = false;
+    cfg_val!(CENTER_TEXT) = false;
+    cfg_val!(FPS) = 60;
+    cfg_val!(LATITUDE) = -12.0336;
+    cfg_val!(LONGITUDE) = -77.0215;
 
     let (mut rl, rt) = raylib::init()
         .resizable()
@@ -77,29 +70,37 @@ fn main() {
         }
     }
 
-    let mut image = Image::gen_image_color(64, 64, Color::BLANK);
+    let mut image = Image::gen_image_color(64, 64, Color::WHITE);
+
+    image.draw_line_ex(Vector2 {x: 64., y: 0.}, Vector2 {x: 0., y: 64.}, 24, style::BG_COLOR2);
+    image.draw_line_ex(Vector2 {x: 0., y: 0.}, Vector2 {x: 64., y: 64.}, 68, style::BG_COLOR1);
+    image.draw_line_ex(Vector2 {x: 0., y: 0.}, Vector2 {x: 64., y: 64.}, 24, style::BG_COLOR2);
+    
+    //image.draw_line_ex(Vector2 {x: -20., y: 64.-20.}, Vector2 {x: 20., y: 64.+20.}, 24, style::BG_COLOR2);
+    //image.draw_line_ex(Vector2 {x: 64.-20., y: -20.}, Vector2 {x: 64.+20., y: 20.}, 24, style::BG_COLOR2);
+    
+    /* // never know if i may need this :eyes:
     for y in 0..64 {
         for x in 0..64 {
-            let tile_index = (x / 32 + y / 32) % 2;
-            let colour = if tile_index == 0 {
-                style::BG_COLOR1
-            } else {
+            let tile_index = (x / 32 - y / 32) % 2;
+            let colour = if tile_index == 1 {
                 style::BG_COLOR2
+            } else {
+                style::BG_COLOR1
             };
             image.draw_pixel(x, y, colour);
         }
     }
+    */
 
     let checkerboard_bg: Texture2D = rl.load_texture_from_image(&rt, &image).unwrap();
-    unsafe {
-        SetTextureWrap(*checkerboard_bg, 0);
-    }
+
     let mut bg_scroll: f32 = 0.0;
 
-    rl.set_target_fps(*config::FPS.lock().unwrap());
+    rl.set_target_fps(cfg_val!(FPS));
     rl.set_window_min_size(640, 480);
     let mut trail: CursorTrail = CursorTrail::new();
-    if *config::FANCY_CURSOR.lock().unwrap() {
+    if cfg_val!(FANCY_CURSOR) {
         rl.hide_cursor();
     }
 
@@ -117,16 +118,17 @@ fn main() {
     ];
 
     let mut setting_toggles: Vec<ToggleButton> = vec![
-        ToggleButton::new("Show Flags".to_string(), *cfg::config::SHOW_FLAG_IMAGES.lock().unwrap(), Settings::ShowFlags),
-        ToggleButton::new("Fancy Cursor".to_string(), *cfg::config::FANCY_CURSOR.lock().unwrap(), Settings::UseFancyCursor),
-        ToggleButton::new("Scrolling BG".to_string(), *cfg::config::SCROLLING_BACKGROUND.lock().unwrap(), Settings::ScrollingBG),
-        ToggleButton::new("Show FPS".to_string(), *cfg::config::SHOW_FPS.lock().unwrap(), Settings::ShowFPS),
+        ToggleButton::new("Show Flags".to_string(), cfg_val!(SHOW_FLAG_IMAGES), Settings::ShowFlags),
+        ToggleButton::new("Fancy Cursor".to_string(), cfg_val!(FANCY_CURSOR), Settings::UseFancyCursor),
+        ToggleButton::new("Scrolling BG".to_string(), cfg_val!(SCROLLING_BACKGROUND), Settings::ScrollingBG),
+        ToggleButton::new("Show FPS".to_string(), cfg_val!(SHOW_FPS), Settings::ShowFPS),
     ];
 
-    let (tx, rx) = mpsc::channel::<Vec<Room>>();
+    let (tx, rx) = mpsc::channel::<Result<Vec<Room>, String>>();
     let mut rooms_fetched = false;
     let mut rooms_fetching = false;
     let mut rooms_list: Vec<Room> = vec![];
+    let mut rooms_fetch_error: String = "".to_string();
     let mut current_screen: Screens = Screens::ServerList;
     let mut amount_of_dots_in_loading_text: f32 = 0.;
     let reload_txt_width = rl.measure_text("Press R to refresh", layout::FONT_SIZE);
@@ -137,9 +139,9 @@ fn main() {
         let screen_height = d.get_screen_height();
         let dt = d.get_frame_time();
 
-        match *config::SCROLLING_BACKGROUND.lock().unwrap() {
+        match cfg_val!(SCROLLING_BACKGROUND) {
             true => {
-                bg_scroll -= 10. * dt;
+                bg_scroll -= 96. * dt;
                 if bg_scroll <= (-checkerboard_bg.width) as f32 {
                     bg_scroll = 0.0
                 };
@@ -147,17 +149,7 @@ fn main() {
             false => (),
         }
 
-        d.draw_texture_rec(
-            &checkerboard_bg,
-            Rectangle {
-                x: bg_scroll,
-                y: 0.,
-                width: screen_width as f32,
-                height: screen_height as f32,
-            },
-            Vector2 { x: 0., y: 0. },
-            Color::WHITE,
-        );
+        d.draw_texture_rec(&checkerboard_bg,rrect(-bg_scroll, bg_scroll, screen_width as f32, screen_height as f32), Vector2::new(0., 0.), Color::WHITE);
 
         // we can actually start drawing things now
 
@@ -210,12 +202,31 @@ fn main() {
                 }
 
                 if let Ok(data) = rx.try_recv() {
-                    rooms_list = data;
+                    match data {
+                        Ok(v) => {
+                            rooms_list = v;
+                            rooms_fetch_error = String::new();
+                        },
+                        Err(e) => {
+                            rooms_list = vec![];
+                            rooms_fetch_error = e;
+                        }                    
+                    };
                     rooms_fetched = true;
                     amount_of_dots_in_loading_text = 0.;
                 }
 
                 if rooms_list.len() == 0 && rooms_fetched {
+                    let mut txt_x = screen_width / 2;
+                    let txt_y = screen_height / 2;
+                    txt_x -= d.measure_text(&rooms_fetch_error, layout::FONT_SIZE) / 2;
+                    d.draw_text(
+                        &rooms_fetch_error,
+                        txt_x,
+                        txt_y,
+                        layout::FONT_SIZE,
+                        style::PRIMARY_COLOR,
+                    );
                     if let Some(txt) = ICONS_SPRITESHEET.get() {
                         d.draw_texture_rec(txt, offline_rec, Vector2 {x: 0. + layout::SPACING, y: screen_height as f32 - offline_rec.height - layout::SPACING}, raylib::color::Color::WHITE);
                     }
@@ -290,17 +301,17 @@ fn main() {
                     if clicked {
                         match btn.target {
                             Settings::ScrollingBG => {
-                                *config::SCROLLING_BACKGROUND.lock().unwrap() = btn.toggled;
+                                cfg_val!(SCROLLING_BACKGROUND) = btn.toggled;
                             },
                             Settings::UseFancyCursor => {
                                 if btn.toggled { d.hide_cursor(); } else { d.show_cursor(); }
-                                *config::FANCY_CURSOR.lock().unwrap() = btn.toggled;
+                                cfg_val!(FANCY_CURSOR) = btn.toggled;
                             },
                             Settings::ShowFlags => {
-                                *config::SHOW_FLAG_IMAGES.lock().unwrap() = btn.toggled;
+                                cfg_val!(SHOW_FLAG_IMAGES) = btn.toggled;
                             },
                             Settings::ShowFPS => {
-                                *config::SHOW_FPS.lock().unwrap() = btn.toggled;
+                                cfg_val!(SHOW_FPS) = btn.toggled;
                             }
                         }
                     }
@@ -309,11 +320,11 @@ fn main() {
             _ => (),
         }
 
-        if *config::SHOW_FPS.lock().unwrap() {
+        if cfg_val!(SHOW_FPS) {
             let fps_width = d.measure_text(&fps, layout::FONT_SIZE);
             d.draw_text(&fps, screen_width-fps_width-layout::SPACING as i32, screen_height-layout::FONT_SIZE+layout::SPACING as i32, layout::FONT_SIZE, style::PRIMARY_COLOR);
         }
-        if *config::FANCY_CURSOR.lock().unwrap() {
+        if cfg_val!(FANCY_CURSOR) {
             trail.draw(dt, &mut d);
         }
     }

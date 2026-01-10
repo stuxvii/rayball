@@ -1,6 +1,7 @@
 use raylib::prelude::*;
 use tinyjson::JsonValue;
 use std::{collections::HashMap, fs, sync::OnceLock};
+use crate::cfg::config;
 
 pub static ICONS_SPRITESHEET: OnceLock<Texture2D> = OnceLock::new();
 pub static FLAGS_SPRITESHEET: OnceLock<Texture2D> = OnceLock::new();
@@ -24,6 +25,12 @@ pub fn load_spritesheets(rl: &mut RaylibHandle, thread: &RaylibThread) -> Result
     Ok(())
 }
 
+
+#[macro_export]
+macro_rules! cfg_val {
+    ($field:ident) => { *config::$field.lock().unwrap() };
+}
+
 pub fn load_settings() -> Result<(), Box<dyn std::error::Error>> {
     let contents = fs::read_to_string("rb.cfg")?;
     let json: JsonValue = contents.parse()?;
@@ -38,15 +45,14 @@ pub fn load_settings() -> Result<(), Box<dyn std::error::Error>> {
         map.get(key)?.get::<f64>().copied()
     };
 
-    if let Some(v) = get_bool("scrolling_bg") { *cfg::config::SCROLLING_BACKGROUND.lock().unwrap() = v; }
-    if let Some(v) = get_bool("show_flags")    { *cfg::config::SHOW_FLAG_IMAGES.lock().unwrap() = v; }
-    if let Some(v) = get_bool("fancy_cursor")  { *cfg::config::FANCY_CURSOR.lock().unwrap() = v; }
-    if let Some(v) = get_bool("center_text")   { *cfg::config::CENTER_TEXT.lock().unwrap() = v; }
-    if let Some(v) = get_bool("show_fps")      { *cfg::config::SHOW_FPS.lock().unwrap() = v; }
-    
-    if let Some(v) = get_num("longitude")      { *cfg::config::LONGITUDE.lock().unwrap() = v as f32; }
-    if let Some(v) = get_num("latitude")       { *cfg::config::LATITUDE.lock().unwrap() = v as f32; }
-    if let Some(v) = get_num("fps")            { *cfg::config::FPS.lock().unwrap() = v as u32; }
+    if let Some(v) = get_bool("scrolling_bg")  {cfg_val!(SCROLLING_BACKGROUND) = v; }
+    if let Some(v) = get_bool("show_flags")    {cfg_val!(SHOW_FLAG_IMAGES) = v; }
+    if let Some(v) = get_bool("fancy_cursor")  {cfg_val!(FANCY_CURSOR) = v; }
+    if let Some(v) = get_bool("center_text")   {cfg_val!(CENTER_TEXT) = v; }
+    if let Some(v) = get_bool("show_fps")      {cfg_val!(SHOW_FPS) = v; }
+    if let Some(v) = get_num("longitude")       {cfg_val!(LONGITUDE) = v as f32; }
+    if let Some(v) = get_num("latitude")        {cfg_val!(LATITUDE) = v as f32; }
+    if let Some(v) = get_num("fps")             {cfg_val!(FPS) = v as u32; }
 
     Ok(())
 }
