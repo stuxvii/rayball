@@ -5,10 +5,12 @@ edition = "2024"
 
 [dependencies]
 chrono = "0.4.42"
+deflate = "1.0.0"
 haversine = "0.2.1"
 minreq = "2.14.1"
 raylib = { version = "5.5.1", default-features = false, features = ["opengl_21"] }
 tinyjson = "2.5.1"
+webrtc = "0.14.0"
 
 [profile.release]
 opt-level = "z"

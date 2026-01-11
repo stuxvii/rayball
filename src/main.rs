@@ -20,6 +20,7 @@ fn save_config() {
     map.insert("fancy_cursor".to_string(), cfg_val!(atomget FANCY_CURSOR).into());
     map.insert("center_text".to_string(), cfg_val!(atomget CENTER_TEXT).into());
     map.insert("show_fps".to_string(), cfg_val!(atomget SHOW_FPS).into());
+    map.insert("military_time".to_string(), cfg_val!(atomget MILITARY_TIME).into());
     
     map.insert("longitude".to_string(), JsonValue::Number(cfg_val!(LONGITUDE) as f64));
     map.insert("latitude".to_string(), JsonValue::Number(cfg_val!(LATITUDE) as f64));
@@ -124,13 +125,13 @@ fn main() {
     let bpm = 163.;
     let mut bg_scroll: f32 = 0.0;
     let mut bg_scroll_speed = 64.;
-    bg_scroll_speed = bpm;
     
     let (tx, rx) = mpsc::channel::<Result<Vec<Room>, String>>();
 
     let mut time_timer: f32 = 0.;
-    
     let mut time_txt:String = Local::now().format("%H:%M:%S").to_string();
+
+    let yameroing_it = false;
     while !rl.window_should_close() {
         let mut d = rl.begin_drawing(&rt);
         let fps = format!("{}", d.get_fps());
@@ -147,7 +148,7 @@ fn main() {
                 if bg_scroll <= (-checkerboard_bg.width) as f32 {
                     bg_scroll = 0.0
                 };
-                if true {
+                if yameroing_it {
                     if bg_scroll_speed > 0. {
                         bg_scroll_speed -= (bpm * dt) * (bpm / 60.);
                     } else {

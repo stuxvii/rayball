@@ -57,6 +57,7 @@ pub fn load_settings() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(v) = get_bool("fancy_cursor")  {atomset(&FANCY_CURSOR, v);}
     if let Some(v) = get_bool("center_text")   {atomset(&CENTER_TEXT, v);}
     if let Some(v) = get_bool("show_fps")      {atomset(&SHOW_FPS, v);}
+    if let Some(v) = get_bool("military_time") {atomset(&MILITARY_TIME, v);}
     if let Some(v) = get_num("longitude")       {cfg_val!(LONGITUDE) = v as f32; }
     if let Some(v) = get_num("latitude")        {cfg_val!(LATITUDE) = v as f32; }
     if let Some(v) = get_num("fps")             {cfg_val!(FPS) = v as u32; }
@@ -86,7 +87,6 @@ pub mod cfg {
         pub static SCROLLING_BACKGROUND: AtomicBool = AtomicBool::new(true);
         pub static CENTER_TEXT: AtomicBool = AtomicBool::new(false);
         pub static SHOW_FPS: AtomicBool = AtomicBool::new(false);
-        // pub static MILITARY_TIME: Mutex<bool> = Mutex::new(true);
         pub static MILITARY_TIME: AtomicBool = AtomicBool::new(true);
         pub static FPS: Mutex<u32> = Mutex::new(24);
         pub static LATITUDE: Mutex<f32> = Mutex::new(-12.0336);
