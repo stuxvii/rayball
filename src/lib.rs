@@ -1,7 +1,7 @@
 use raylib::prelude::*;
 use tinyjson::JsonValue;
-use std::{collections::HashMap, fs, sync::OnceLock};
-use crate::cfg::config;
+use std::{collections::HashMap, fs, sync::{OnceLock, atomic::AtomicBool}};
+use crate::cfg::config::{self, *};
 
 pub static ICONS_SPRITESHEET: OnceLock<Texture2D> = OnceLock::new();
 pub static FLAGS_SPRITESHEET: OnceLock<Texture2D> = OnceLock::new();
@@ -14,7 +14,7 @@ pub fn load_spritesheets(rl: &mut RaylibHandle, thread: &RaylibThread) -> Result
     let icons_im_data = Image::load_image_from_mem(".png", icons_sp_file)?;
     let flags_sp_file = include_bytes!("./res/img/flags.png");
     let flags_im_data = Image::load_image_from_mem(".png", flags_sp_file)?;
-    
+
     let _ = ICONS_SPRITESHEET
         .set(rl.load_texture_from_image(thread, &icons_im_data).unwrap())
         .or(Err("Failed to set ICONS_SPRITESHEET"));
@@ -29,6 +29,13 @@ pub fn load_spritesheets(rl: &mut RaylibHandle, thread: &RaylibThread) -> Result
 #[macro_export]
 macro_rules! cfg_val {
     ($field:ident) => { *config::$field.lock().unwrap() };
+    (atomget $field:ident) => { 
+        config::$field.load(std::sync::atomic::Ordering::Relaxed) 
+    };
+}
+
+fn atomset(a: &AtomicBool, y: bool) {
+    a.store(y, std::sync::atomic::Ordering::Relaxed);
 }
 
 pub fn load_settings() -> Result<(), Box<dyn std::error::Error>> {
@@ -44,12 +51,12 @@ pub fn load_settings() -> Result<(), Box<dyn std::error::Error>> {
     let get_num = |key: &str| -> Option<f64> {
         map.get(key)?.get::<f64>().copied()
     };
-
-    if let Some(v) = get_bool("scrolling_bg")  {cfg_val!(SCROLLING_BACKGROUND) = v; }
-    if let Some(v) = get_bool("show_flags")    {cfg_val!(SHOW_FLAG_IMAGES) = v; }
-    if let Some(v) = get_bool("fancy_cursor")  {cfg_val!(FANCY_CURSOR) = v; }
-    if let Some(v) = get_bool("center_text")   {cfg_val!(CENTER_TEXT) = v; }
-    if let Some(v) = get_bool("show_fps")      {cfg_val!(SHOW_FPS) = v; }
+    
+    if let Some(v) = get_bool("scrolling_bg")  {atomset(&SCROLLING_BACKGROUND, v);}
+    if let Some(v) = get_bool("show_flags")    {atomset(&SHOW_FLAG_IMAGES, v);}
+    if let Some(v) = get_bool("fancy_cursor")  {atomset(&FANCY_CURSOR, v);}
+    if let Some(v) = get_bool("center_text")   {atomset(&CENTER_TEXT, v);}
+    if let Some(v) = get_bool("show_fps")      {atomset(&SHOW_FPS, v);}
     if let Some(v) = get_num("longitude")       {cfg_val!(LONGITUDE) = v as f32; }
     if let Some(v) = get_num("latitude")        {cfg_val!(LATITUDE) = v as f32; }
     if let Some(v) = get_num("fps")             {cfg_val!(FPS) = v as u32; }
@@ -72,14 +79,16 @@ pub mod cfg {
     }
 
     pub mod config {
-        use std::sync::Mutex;
+        use std::sync::{Mutex, atomic::AtomicBool};
 
-        pub static SHOW_FLAG_IMAGES: Mutex<bool> = Mutex::new(true);
-        pub static FANCY_CURSOR: Mutex<bool> = Mutex::new(true);
-        pub static SCROLLING_BACKGROUND: Mutex<bool> = Mutex::new(true);
-        pub static CENTER_TEXT: Mutex<bool> = Mutex::new(false);
-        pub static SHOW_FPS: Mutex<bool> = Mutex::new(false);
-        pub static FPS: Mutex<u32> = Mutex::new(240);
+        pub static SHOW_FLAG_IMAGES: AtomicBool = AtomicBool::new(true);
+        pub static FANCY_CURSOR: AtomicBool = AtomicBool::new(true);
+        pub static SCROLLING_BACKGROUND: AtomicBool = AtomicBool::new(true);
+        pub static CENTER_TEXT: AtomicBool = AtomicBool::new(false);
+        pub static SHOW_FPS: AtomicBool = AtomicBool::new(false);
+        // pub static MILITARY_TIME: Mutex<bool> = Mutex::new(true);
+        pub static MILITARY_TIME: AtomicBool = AtomicBool::new(true);
+        pub static FPS: Mutex<u32> = Mutex::new(24);
         pub static LATITUDE: Mutex<f32> = Mutex::new(-12.0336);
         pub static LONGITUDE: Mutex<f32> = Mutex::new(-77.0215);
     }
@@ -93,6 +102,8 @@ pub mod cfg {
         pub static GREEN_COLOR: Color = Color::GREEN;
         pub static BG_COLOR1: Color = Color::new(0, 32, 0, 255);
         pub static BG_COLOR2: Color = Color::new(0, 64, 0, 255);
+        pub static BG_POLOR1: Color = Color::new(255, 160, 255, 255);
+        pub static BG_POLOR2: Color = Color::new(220, 90, 200, 255);
     }
 }
 
@@ -102,7 +113,9 @@ pub enum Settings {
     ShowFlags = 0,
     UseFancyCursor = 1,
     ScrollingBG = 2,
-    ShowFPS = 3,    
+    ShowFPS = 3,
+    CenterText = 4,
+    MilitaryTime = 5,
 }
 
 #[derive(Debug, Clone, Copy)]

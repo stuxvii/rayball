@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use raylib::math::rrect;
 use raylib::prelude::RaylibDraw;
 use raylib::prelude::RaylibDrawHandle;
@@ -6,7 +8,6 @@ use raylib::prelude::*;
 use crate::FLAGS_SPRITESHEET;
 use crate::ICONS_SPRITESHEET;
 use crate::Screens;
-use crate::Settings;
 use crate::cfg::config;
 use crate::cfg::layout;
 use crate::cfg::style;
@@ -67,7 +68,7 @@ impl ButtonContent for Button {
         d.draw_rectangle_rec(rect, bg_color);
 
         let mut text_x = rect.x as i32;
-        if cfg_val!(CENTER_TEXT) {
+        if cfg_val!(atomget CENTER_TEXT) {
             text_x += (rect.width as i32 / 2) - (d.measure_text(&self.text, layout::FONT_SIZE) / 2);
         } else {
             text_x += layout::SPACING as i32 * 2;
@@ -90,7 +91,7 @@ impl ButtonContent for Room {
         let bg_color = Interaction::resolve_color(mouse_over, false);
         d.draw_rectangle_rec(rect, bg_color);
         let mut txt_x: f32 = rect.x;
-        if cfg_val!(CENTER_TEXT) {
+        if cfg_val!(atomget CENTER_TEXT) {
             txt_x = rect.x + rect.width / 2.;
             txt_x -= (d.measure_text(&self.text, layout::FONT_SIZE) / 2 )as f32;
         }
@@ -103,7 +104,7 @@ impl ButtonContent for Room {
         d.draw_text(
             &self.player_label,
             (player_count_rec.x + layout::SPACING) as i32,
-            (rect.y + layout::SPACING) as i32,
+            (rect.y + (layout::BUTTON_HEIGHT - layout::FONT_SIZE as f32) - layout::SPACING) as i32,
             layout::FONT_SIZE,
             style::PRIMARY_COLOR,
         );
@@ -116,7 +117,7 @@ impl ButtonContent for Room {
         );
         d.draw_rectangle_rec(flag_bg_rect, style::SECONDARY_COLOR);
 
-        if cfg_val!(SHOW_FLAG_IMAGES) {
+        if cfg_val!(atomget SHOW_FLAG_IMAGES) {
             let position = Vector2 {
                 x: flag_bg_rect.x + layout::SPACING,
                 y: rect.y + layout::SPACING,
@@ -260,19 +261,18 @@ impl Room {
     }
 }
 
-pub struct ToggleButton {
+pub struct SettingToggle {
     pub text: String,
-    pub toggled: bool,
-    pub target: Settings,
-
+    pub target: &'static AtomicBool,
+    pub callback: Option<fn(bool, &mut RaylibDrawHandle)>,
 }
 
-impl ToggleButton {
-    pub fn new(text: String, toggled: bool, target: Settings) -> ToggleButton {
-        ToggleButton {
+impl SettingToggle {
+    pub fn new(text: String, target: &'static AtomicBool, callback: Option<fn(bool, &mut RaylibDrawHandle)>,) -> SettingToggle {
+        SettingToggle {
             text,
-            toggled,
-            target
+            target,
+            callback
         }
     }
 
@@ -280,18 +280,18 @@ impl ToggleButton {
         let (mouse_over, clicked) = Interaction::check(rect, d);
 
         if clicked && mouse_over {
-            self.toggled = !self.toggled;
+            self.target.store(!self.target.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
         }
         self.render(rect, mouse_over, d);
         clicked && mouse_over
     }
 
     fn render(&self, rect: Rectangle, mouse_over: bool, d: &mut RaylibDrawHandle) {
-        let bg = Interaction::resolve_color(mouse_over, self.toggled);
+        let bg = Interaction::resolve_color(mouse_over, self.target.load(std::sync::atomic::Ordering::Relaxed));
         d.draw_rectangle_rec(rect, bg);
 
         let mut text_x = rect.x as i32;
-        if cfg_val!(CENTER_TEXT) {
+        if cfg_val!(atomget CENTER_TEXT) {
             text_x += (rect.width as i32 / 2) - (d.measure_text(&self.text, layout::FONT_SIZE) / 2);
         } else {
             text_x += layout::SPACING as i32 * 2;

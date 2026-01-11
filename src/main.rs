@@ -1,7 +1,9 @@
+use chrono::prelude::*;
+use rayball_rs::cfg::config::*;
 use rayball_rs::cfg::{layout, style, config};
 use rayball_rs::net::rooms;
 use rayball_rs::ui::cursor::CursorTrail;
-use rayball_rs::ui::primitives::{IconButton, Room, ToggleButton};
+use rayball_rs::ui::primitives::{IconButton, Room, SettingToggle};
 use rayball_rs::*;
 use raylib::prelude::*;
 use std::collections::HashMap;
@@ -13,11 +15,11 @@ use tinyjson::JsonValue;
 fn save_config() {
     let mut map = HashMap::new();
 
-    map.insert("scrolling_bg".to_string(), cfg_val!(SCROLLING_BACKGROUND).into());
-    map.insert("show_flags".to_string(), cfg_val!(SHOW_FLAG_IMAGES).into());
-    map.insert("fancy_cursor".to_string(), cfg_val!(FANCY_CURSOR).into());
-    map.insert("center_text".to_string(), cfg_val!(CENTER_TEXT).into());
-    map.insert("show_fps".to_string(), cfg_val!(SHOW_FPS).into());
+    map.insert("scrolling_bg".to_string(), cfg_val!(atomget SCROLLING_BACKGROUND).into());
+    map.insert("show_flags".to_string(), cfg_val!(atomget SHOW_FLAG_IMAGES).into());
+    map.insert("fancy_cursor".to_string(), cfg_val!(atomget FANCY_CURSOR).into());
+    map.insert("center_text".to_string(), cfg_val!(atomget CENTER_TEXT).into());
+    map.insert("show_fps".to_string(), cfg_val!(atomget SHOW_FPS).into());
     
     map.insert("longitude".to_string(), JsonValue::Number(cfg_val!(LONGITUDE) as f64));
     map.insert("latitude".to_string(), JsonValue::Number(cfg_val!(LATITUDE) as f64));
@@ -36,28 +38,8 @@ fn thread_fetch(tx: Sender<Result<Vec<Room>, String>>) {
 }
 
 fn main() {
-    cfg_val!(SHOW_FLAG_IMAGES) = true;
-    cfg_val!(FANCY_CURSOR) = true;
-    cfg_val!(SCROLLING_BACKGROUND) = true;
-    cfg_val!(SHOW_FPS) = false;
-    cfg_val!(CENTER_TEXT) = false;
-    cfg_val!(FPS) = 60;
-    cfg_val!(LATITUDE) = -12.0336;
-    cfg_val!(LONGITUDE) = -77.0215;
-
-    let (mut rl, rt) = raylib::init()
-        .resizable()
-        .title("rayball")
-        .size(640, 480)
-        .build();
-
-    match load_spritesheets(&mut rl, &rt) {
-        Ok(_) => {println!("Loaded textures.")},
-        Err(e) => {println!("Epic fail loading textures: {}.", e)},
-    };
-
-    let res = load_settings();
-    match res {
+    
+    match load_settings() {
         Ok(_) => {
             println!("Successfully loaded configuration!");
         }
@@ -70,45 +52,35 @@ fn main() {
         }
     }
 
-    let mut image = Image::gen_image_color(64, 64, Color::WHITE);
+    let (mut rl, rt) = raylib::init()
+        .resizable()
+        .title("rayball")
+        .size(640, 480)
+        .build();
+    
+    rl.set_target_fps(cfg_val!(FPS));
+    rl.set_window_min_size(480/2, 360/2);
+    
+    match load_spritesheets(&mut rl, &rt) {
+        Ok(_) => {println!("Loaded textures.")},
+        Err(e) => {println!("Epic fail loading textures: {}.", e)},
+    };
 
-    image.draw_line_ex(Vector2 {x: 64., y: 0.}, Vector2 {x: 0., y: 64.}, 24, style::BG_COLOR2);
-    image.draw_line_ex(Vector2 {x: 0., y: 0.}, Vector2 {x: 64., y: 64.}, 68, style::BG_COLOR1);
-    image.draw_line_ex(Vector2 {x: 0., y: 0.}, Vector2 {x: 64., y: 64.}, 24, style::BG_COLOR2);
+    let image_size = 64;
+    let mut image = Image::gen_image_color(image_size, image_size, Color::RED);
+
+    let image_size_f: f32 = image_size as f32;
     
-    //image.draw_line_ex(Vector2 {x: -20., y: 64.-20.}, Vector2 {x: 20., y: 64.+20.}, 24, style::BG_COLOR2);
-    //image.draw_line_ex(Vector2 {x: 64.-20., y: -20.}, Vector2 {x: 64.+20., y: 20.}, 24, style::BG_COLOR2);
-    
-    /* // never know if i may need this :eyes:
-    for y in 0..64 {
-        for x in 0..64 {
-            let tile_index = (x / 32 - y / 32) % 2;
-            let colour = if tile_index == 1 {
-                style::BG_COLOR2
-            } else {
-                style::BG_COLOR1
-            };
-            image.draw_pixel(x, y, colour);
-        }
-    }
-    */
+    image.draw_line_ex(Vector2 {x: image_size_f, y: 0.}, Vector2 {x: 0., y: image_size_f}, image_size/2, style::BG_COLOR2);
+    image.draw_line_ex(Vector2 {x: 0., y: 0.}, Vector2 {x: image_size_f, y: image_size_f}, image_size, style::BG_COLOR1);
+    image.draw_line_ex(Vector2 {x: 0., y: 0.}, Vector2 {x: image_size_f, y: image_size_f}, (image_size_f/2.2) as i32, style::BG_COLOR2);
 
     let checkerboard_bg: Texture2D = rl.load_texture_from_image(&rt, &image).unwrap();
 
-    let mut bg_scroll: f32 = 0.0;
-
-    rl.set_target_fps(cfg_val!(FPS));
-    rl.set_window_min_size(640, 480);
     let mut trail: CursorTrail = CursorTrail::new();
-    if cfg_val!(FANCY_CURSOR) {
+    if cfg_val!(atomget FANCY_CURSOR) {
         rl.hide_cursor();
     }
-
-    let list_width = rl.measure_text(&"W".repeat(50), layout::FONT_SIZE);
-
-    let rooms_per_page: usize = 24;
-    let mut scroll_offset: usize = 0;
-    let scroll_amount: usize = 3;
 
     let offline_rec = rrect(22, 0, 13, 11);
     let navbar_buttons: Vec<IconButton> = vec![
@@ -117,21 +89,48 @@ fn main() {
         IconButton::new(rrect(44.0, 0.0, 11.0, 11.0), Screens::GithubLink),
     ];
 
-    let mut setting_toggles: Vec<ToggleButton> = vec![
-        ToggleButton::new("Show Flags".to_string(), cfg_val!(SHOW_FLAG_IMAGES), Settings::ShowFlags),
-        ToggleButton::new("Fancy Cursor".to_string(), cfg_val!(FANCY_CURSOR), Settings::UseFancyCursor),
-        ToggleButton::new("Scrolling BG".to_string(), cfg_val!(SCROLLING_BACKGROUND), Settings::ScrollingBG),
-        ToggleButton::new("Show FPS".to_string(), cfg_val!(SHOW_FPS), Settings::ShowFPS),
+    let mut setting_toggles: Vec<SettingToggle> = vec![
+        SettingToggle::new("Show Flags".to_string(), &SHOW_FLAG_IMAGES, None),
+        SettingToggle::new("Fancy Cursor".to_string(), &FANCY_CURSOR, Some(|on, d| {
+        if on {
+            println!("HIDE THE CURSOR BITCH");
+            d.hide_cursor();
+        } else {
+            println!("SHOW THE CURSOR BITCH");
+            d.show_cursor();
+        }
+    })),
+        SettingToggle::new("Scrolling BG".to_string(), &SCROLLING_BACKGROUND, None),
+        SettingToggle::new("Show FPS".to_string(), &SHOW_FPS, None),
+        SettingToggle::new("Center Text".to_string(), &CENTER_TEXT, None),
+        SettingToggle::new("24H Clock".to_string(), &MILITARY_TIME, None),
     ];
 
-    let (tx, rx) = mpsc::channel::<Result<Vec<Room>, String>>();
-    let mut rooms_fetched = false;
-    let mut rooms_fetching = false;
-    let mut rooms_list: Vec<Room> = vec![];
     let mut rooms_fetch_error: String = "".to_string();
+    let mut rooms_list: Vec<Room> = vec![];
+    let mut rooms_fetching = false;
+    let mut rooms_fetched = false;
+    let mut scroll_offset: usize = 0;
+    let rooms_per_page: usize = 24;
+    let scroll_amount: usize = 3;
+
     let mut current_screen: Screens = Screens::ServerList;
     let mut amount_of_dots_in_loading_text: f32 = 0.;
-    let reload_txt_width = rl.measure_text("Press R to refresh", layout::FONT_SIZE);
+    let text_widths = HashMap::from([
+        ("list", rl.measure_text(&"W".repeat(48), layout::FONT_SIZE)),
+        ("clck", rl.measure_text(&"00:00:00", layout::FONT_SIZE)),
+    ]);
+
+    let bpm = 163.;
+    let mut bg_scroll: f32 = 0.0;
+    let mut bg_scroll_speed = 64.;
+    bg_scroll_speed = bpm;
+    
+    let (tx, rx) = mpsc::channel::<Result<Vec<Room>, String>>();
+
+    let mut time_timer: f32 = 0.;
+    
+    let mut time_txt:String = Local::now().format("%H:%M:%S").to_string();
     while !rl.window_should_close() {
         let mut d = rl.begin_drawing(&rt);
         let fps = format!("{}", d.get_fps());
@@ -139,19 +138,25 @@ fn main() {
         let screen_height = d.get_screen_height();
         let dt = d.get_frame_time();
 
-        match cfg_val!(SCROLLING_BACKGROUND) {
+        d.draw_texture_rec(&checkerboard_bg,rrect(-bg_scroll, bg_scroll, screen_width as f32, screen_height as f32), Vector2::zero(), Color::WHITE);
+        
+
+        match cfg_val!(atomget SCROLLING_BACKGROUND) {
             true => {
-                bg_scroll -= 96. * dt;
+                bg_scroll -= bg_scroll_speed * dt;
                 if bg_scroll <= (-checkerboard_bg.width) as f32 {
                     bg_scroll = 0.0
                 };
+                if true {
+                    if bg_scroll_speed > 0. {
+                        bg_scroll_speed -= (bpm * dt) * (bpm / 60.);
+                    } else {
+                        bg_scroll_speed  = bpm;
+                    }
+                }
             }
             false => (),
         }
-
-        d.draw_texture_rec(&checkerboard_bg,rrect(-bg_scroll, bg_scroll, screen_width as f32, screen_height as f32), Vector2::new(0., 0.), Color::WHITE);
-
-        // we can actually start drawing things now
 
         d.draw_rectangle(
             0,
@@ -166,6 +171,21 @@ fn main() {
             },
         );
 
+        // we can actually start drawing things now
+        
+        time_timer += dt;
+
+        if time_timer > 0.5 { // wouldn't want to just hammer this func
+            if cfg_val!(atomget MILITARY_TIME) {
+                time_txt = Local::now().format("%H:%M:%S").to_string();
+            } else {
+                time_txt = Local::now().format("%I:%M:%S").to_string();
+            }
+            time_timer = 0.;
+        }
+
+        d.draw_text(&time_txt, (screen_width / 2) - (text_widths.get("clck").unwrap() / 2), layout::BUTTON_HEIGHT as i32 - layout::FONT_SIZE, layout::FONT_SIZE, style::PRIMARY_COLOR);
+        
         for (i, btn) in navbar_buttons.clone().into_iter().enumerate() {
             let state = btn.draw(
                 &mut d,
@@ -233,11 +253,9 @@ fn main() {
                 }
 
                 if rooms_fetched {
-                    d.draw_text("Press R to refresh", (screen_width/2)-reload_txt_width/2, screen_height-layout::FONT_SIZE, layout::FONT_SIZE, style::PRIMARY_COLOR);
-
                     let mut room_list_x = screen_width / 2;
                     let mut room_list_y = screen_height / 2;
-                    room_list_x -= list_width / 2;
+                    room_list_x -= text_widths.get("list").unwrap() / 2;
                     room_list_x -= layout::FLAG_SIZE.x as i32;
                     room_list_x -= layout::DISTANCE_WIDTH;
                     room_list_x += layout::FONT_SIZE;
@@ -255,7 +273,7 @@ fn main() {
                         let rect = Rectangle {
                             x: room_list_x as f32,
                             y: room_list_y as f32 + y,
-                            width: list_width as f32,
+                            width: *text_widths.get("list").unwrap() as f32,
                             height: layout::BUTTON_HEIGHT,
                         };
                         if room.draw(&mut d, rect) {};
@@ -299,20 +317,11 @@ fn main() {
                     rect.x -= (btn_width / 2) as f32;
                     let clicked = btn.draw(rect, &mut d);
                     if clicked {
-                        match btn.target {
-                            Settings::ScrollingBG => {
-                                cfg_val!(SCROLLING_BACKGROUND) = btn.toggled;
-                            },
-                            Settings::UseFancyCursor => {
-                                if btn.toggled { d.hide_cursor(); } else { d.show_cursor(); }
-                                cfg_val!(FANCY_CURSOR) = btn.toggled;
-                            },
-                            Settings::ShowFlags => {
-                                cfg_val!(SHOW_FLAG_IMAGES) = btn.toggled;
-                            },
-                            Settings::ShowFPS => {
-                                cfg_val!(SHOW_FPS) = btn.toggled;
-                            }
+                        let on = btn.target.load(std::sync::atomic::Ordering::Relaxed);
+                        btn.target.store(on, std::sync::atomic::Ordering::Relaxed);
+                        
+                        if let Some(act) = btn.callback {
+                            act(on, &mut d);
                         }
                     }
                 }
@@ -320,12 +329,15 @@ fn main() {
             _ => (),
         }
 
-        if cfg_val!(SHOW_FPS) {
-            let fps_width = d.measure_text(&fps, layout::FONT_SIZE);
-            d.draw_text(&fps, screen_width-fps_width-layout::SPACING as i32, screen_height-layout::FONT_SIZE+layout::SPACING as i32, layout::FONT_SIZE, style::PRIMARY_COLOR);
-        }
-        if cfg_val!(FANCY_CURSOR) {
+        if cfg_val!(atomget FANCY_CURSOR) {
             trail.draw(dt, &mut d);
+        }
+
+        // It is very much intentional that the FPS draw over the Fancy Cusror (That typo in cursor is also very much intended).
+        if cfg_val!(atomget SHOW_FPS) {
+            let fps_width = d.measure_text(&fps, layout::FONT_SIZE);
+            d.draw_rectangle(screen_width-fps_width, screen_height-layout::FONT_SIZE+layout::SPACING as i32, fps_width, layout::BUTTON_HEIGHT as i32, Color::new(0, 0, 0, 127));
+            d.draw_text(&fps, screen_width-fps_width-layout::SPACING as i32, screen_height-layout::FONT_SIZE+layout::SPACING as i32, layout::FONT_SIZE, style::PRIMARY_COLOR);
         }
     }
 

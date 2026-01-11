@@ -3,7 +3,7 @@
 | (_|\/|_)(_|||
      /         
 ```
-rayball is a very early work in progress reimplementation of the HaxBall client with biased additions, built using raylib.
+rayball is a very early work in progress reimplementation of the H\*xBall client with biased additions, built using raylib.
 
 ### todo list
 - [x] server list
@@ -12,7 +12,7 @@ rayball is a very early work in progress reimplementation of the HaxBall client 
   - [ ] chat
   - [ ] gameplay
   - [ ] extrapolation
-- [ ] settings save
-- [ ] better ui
-- [ ] better ux
+- [x] settings save
+- [x] better ui
+- [x] better ux
 - [x] nav bar
