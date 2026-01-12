@@ -13,22 +13,21 @@ use crate::cfg::layout;
 use crate::cfg::style;
 
 pub struct Interaction;
-
 impl Interaction {
     pub fn check(rect: Rectangle, d: &RaylibDrawHandle) -> (bool, bool) {
         let m = d.get_mouse_position();
         let mouse_over = rect.check_collision_point_rec(m);
-        let clicked = d.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
+        let clicked = mouse_over && d.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
         (mouse_over, clicked)
     }
 
     pub fn resolve_color(mouse_over: bool, toggled: bool) -> Color {
         if toggled {
-            style::GREEN_COLOR
+            clr_val!(ENABLED_COLOR)
         } else if mouse_over {
-            style::HOVER_COLOR
+            clr_val!(HOVER_COLOR)
         } else {
-            style::SECONDARY_COLOR
+            clr_val!(SECONDARY_COLOR)
         }
     }
 }
@@ -57,7 +56,7 @@ impl ButtonContent for IconButton {
             txt_cntr.x += negative.x * 1.5;
             txt_cntr.y += negative.y * 1.5;
 
-            d.draw_texture_rec(txt, self.icon_rec, txt_cntr, style::PRIMARY_COLOR);
+            d.draw_texture_rec(txt, self.icon_rec, txt_cntr, clr_val!(PRIMARY_COLOR));
         }
     }
 }
@@ -81,7 +80,7 @@ impl ButtonContent for Button {
             text_x,
             text_y,
             layout::FONT_SIZE,
-            style::PRIMARY_COLOR,
+            clr_val!(PRIMARY_COLOR),
         );
     }
 }
@@ -95,18 +94,18 @@ impl ButtonContent for Room {
             txt_x = rect.x + rect.width / 2.;
             txt_x -= (d.measure_text(&self.text, layout::FONT_SIZE) / 2 )as f32;
         }
-        d.draw_text(&self.text, txt_x as i32, (rect.y + layout::SPACING*2.) as i32, layout::FONT_SIZE, style::PRIMARY_COLOR);
+        d.draw_text(&self.text, txt_x as i32, (rect.y + layout::SPACING*2.) as i32, layout::FONT_SIZE, clr_val!(PRIMARY_COLOR));
 
         let pcl_offset = rect.width + rect.x + layout::SPACING;
         let player_count_rec = rrect(pcl_offset, rect.y, layout::PLAYER_COUNT_WIDTH, rect.height);
 
-        d.draw_rectangle_rec(player_count_rec, style::SECONDARY_COLOR);
+        d.draw_rectangle_rec(player_count_rec, clr_val!(SECONDARY_COLOR));
         d.draw_text(
             &self.player_label,
             (player_count_rec.x + layout::SPACING) as i32,
             (rect.y + (layout::BUTTON_HEIGHT - layout::FONT_SIZE as f32) - layout::SPACING) as i32,
             layout::FONT_SIZE,
-            style::PRIMARY_COLOR,
+            clr_val!(PRIMARY_COLOR),
         );
 
         let flag_bg_rect = rrect(
@@ -115,7 +114,7 @@ impl ButtonContent for Room {
             layout::FLAG_SIZE.y + layout::DISTANCE_WIDTH as f32,
             rect.height,
         );
-        d.draw_rectangle_rec(flag_bg_rect, style::SECONDARY_COLOR);
+        d.draw_rectangle_rec(flag_bg_rect, clr_val!(SECONDARY_COLOR));
 
         if cfg_val!(atomget SHOW_FLAG_IMAGES) {
             let position = Vector2 {
@@ -131,7 +130,7 @@ impl ButtonContent for Room {
                 (flag_bg_rect.x + layout::SPACING) as i32,
                 (rect.y + layout::SPACING) as i32,
                 layout::FONT_SIZE,
-                style::PRIMARY_COLOR,
+                clr_val!(PRIMARY_COLOR),
             );
         }
 
@@ -140,7 +139,7 @@ impl ButtonContent for Room {
             (layout::FLAG_SIZE.x + flag_bg_rect.x) as i32,
             (rect.y + layout::SPACING * 2.0) as i32,
             layout::FONT_SIZE,
-            style::PRIMARY_COLOR,
+            clr_val!(PRIMARY_COLOR),
         );
 
         let lock_bg_rect = rrect(
@@ -149,7 +148,7 @@ impl ButtonContent for Room {
             layout::FONT_SIZE as f32 + layout::SPACING,
             rect.height,
         );
-        d.draw_rectangle_rec(lock_bg_rect, style::SECONDARY_COLOR);
+        d.draw_rectangle_rec(lock_bg_rect, clr_val!(SECONDARY_COLOR));
 
         let lock_text_rec = Rectangle {
             x: 35.0,
@@ -304,7 +303,7 @@ impl SettingToggle {
             text_x,
             text_y,
             layout::FONT_SIZE,
-            style::PRIMARY_COLOR,
+            clr_val!(PRIMARY_COLOR),
         );
     }
 }

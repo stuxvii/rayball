@@ -58,7 +58,7 @@ impl CursorTrail {
         for (i, pos) in self.positions.iter().enumerate() {
             if pos.x != 0.0 || pos.y != 0.0 {
                 let ratio = (MAX_TRAIL_LENGTH - i) as f32 / MAX_TRAIL_LENGTH as f32;
-                let mut trail_color = style::PRIMARY_COLOR;
+                let mut trail_color = clr_val!(PRIMARY_COLOR);
 
                 let target_alpha = (ratio * 127.0 * alpha_factor) as u8;
                 trail_color.a = target_alpha;
@@ -69,7 +69,7 @@ impl CursorTrail {
         }
 
         
-        let mut cursor_color = style::PRIMARY_COLOR;
+        let mut cursor_color = clr_val!(PRIMARY_COLOR);
         cursor_color.a = (255.0 * alpha_factor) as u8;
         d.draw_circle_v(mouse_position, CURSOR_SIZE, cursor_color);
     }

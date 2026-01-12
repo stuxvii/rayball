@@ -3,43 +3,27 @@ use rayball_rs::cfg::config::*;
 use rayball_rs::cfg::{layout, style, config};
 use rayball_rs::net::rooms;
 use rayball_rs::ui::cursor::CursorTrail;
-use rayball_rs::ui::primitives::{IconButton, Room, SettingToggle};
+use rayball_rs::ui::primitives::{ IconButton, Room, SettingToggle};
 use rayball_rs::*;
+use raylib::error::Error;
 use raylib::prelude::*;
 use std::collections::HashMap;
-use std::fs::write;
-use std::sync::mpsc::{self, Sender};
-use std::{thread, vec};
-use tinyjson::JsonValue;
+use std::vec;
+use tokio::sync::mpsc;
 
-fn save_config() {
-    let mut map = HashMap::new();
-
-    map.insert("scrolling_bg".to_string(), cfg_val!(atomget SCROLLING_BACKGROUND).into());
-    map.insert("show_flags".to_string(), cfg_val!(atomget SHOW_FLAG_IMAGES).into());
-    map.insert("fancy_cursor".to_string(), cfg_val!(atomget FANCY_CURSOR).into());
-    map.insert("center_text".to_string(), cfg_val!(atomget CENTER_TEXT).into());
-    map.insert("show_fps".to_string(), cfg_val!(atomget SHOW_FPS).into());
-    map.insert("military_time".to_string(), cfg_val!(atomget MILITARY_TIME).into());
-    
-    map.insert("longitude".to_string(), JsonValue::Number(cfg_val!(LONGITUDE) as f64));
-    map.insert("latitude".to_string(), JsonValue::Number(cfg_val!(LATITUDE) as f64));
-    map.insert("fps".to_string(), JsonValue::Number(cfg_val!(FPS) as f64));
-
-    let root = JsonValue::Object(map);
-    let _ = write("./rb.cfg", root.stringify().unwrap());
-}
-
-fn thread_fetch(tx: Sender<Result<Vec<Room>, String>>) {
-    let tx_clone = tx.clone();
-    thread::spawn(move || {
-        let data: Result<Vec<Room>, String> = rooms::fetch_rooms(FLAGS_SPRITESHEET.get().unwrap());
-        let _ = tx_clone.send(data);
+fn thread_fetch(tx: mpsc::UnboundedSender<Result<Vec<Room>, String>>) {
+    tokio::spawn(async move {
+        let data = tokio::task::spawn_blocking(move || {
+            rooms::fetch_rooms(FLAGS_SPRITESHEET.get().unwrap())
+        }).await.unwrap_or(Err("Thread join failed".to_string()));
+        let _ = tx.send(data);
     });
 }
 
-fn main() {
-    
+#[tokio::main]
+async fn main() -> Result<(), Error> {
+    clr_val!(ENABLED_COLOR) = Color::from_hex("004400").expect("Invalid hex");
+
     match load_settings() {
         Ok(_) => {
             println!("Successfully loaded configuration!");
@@ -72,9 +56,9 @@ fn main() {
 
     let image_size_f: f32 = image_size as f32;
     
-    image.draw_line_ex(Vector2 {x: image_size_f, y: 0.}, Vector2 {x: 0., y: image_size_f}, image_size/2, style::BG_COLOR2);
-    image.draw_line_ex(Vector2 {x: 0., y: 0.}, Vector2 {x: image_size_f, y: image_size_f}, image_size, style::BG_COLOR1);
-    image.draw_line_ex(Vector2 {x: 0., y: 0.}, Vector2 {x: image_size_f, y: image_size_f}, (image_size_f/2.2) as i32, style::BG_COLOR2);
+    image.draw_line_ex(Vector2 {x: image_size_f, y: 0.}, Vector2 {x: 0., y: image_size_f}, image_size/2, clr_val!(BG_COLOR2));
+    image.draw_line_ex(Vector2 {x: 0., y: 0.}, Vector2 {x: image_size_f, y: image_size_f}, image_size, clr_val!(BG_COLOR1));
+    image.draw_line_ex(Vector2 {x: 0., y: 0.}, Vector2 {x: image_size_f, y: image_size_f}, (image_size_f/2.2) as i32, clr_val!(BG_COLOR2));
 
     let checkerboard_bg: Texture2D = rl.load_texture_from_image(&rt, &image).unwrap();
 
@@ -92,15 +76,7 @@ fn main() {
 
     let mut setting_toggles: Vec<SettingToggle> = vec![
         SettingToggle::new("Show Flags".to_string(), &SHOW_FLAG_IMAGES, None),
-        SettingToggle::new("Fancy Cursor".to_string(), &FANCY_CURSOR, Some(|on, d| {
-        if on {
-            println!("HIDE THE CURSOR BITCH");
-            d.hide_cursor();
-        } else {
-            println!("SHOW THE CURSOR BITCH");
-            d.show_cursor();
-        }
-    })),
+        SettingToggle::new("Fancy Cursor".to_string(), &FANCY_CURSOR, Some(|on, d|{if on{d.hide_cursor();}else{d.show_cursor();}})),
         SettingToggle::new("Scrolling BG".to_string(), &SCROLLING_BACKGROUND, None),
         SettingToggle::new("Show FPS".to_string(), &SHOW_FPS, None),
         SettingToggle::new("Center Text".to_string(), &CENTER_TEXT, None),
@@ -122,16 +98,29 @@ fn main() {
         ("clck", rl.measure_text(&"00:00:00", layout::FONT_SIZE)),
     ]);
 
-    let bpm = 163.;
+    let bpm = 164.;
     let mut bg_scroll: f32 = 0.0;
-    let mut bg_scroll_speed = 64.;
+    let mut bg_scroll_speed: f32;
+    bg_scroll_speed = 64.;
     
-    let (tx, rx) = mpsc::channel::<Result<Vec<Room>, String>>();
+    let (tx, mut rx) = mpsc::unbounded_channel::<Result<Vec<Room>, String>>();
 
     let mut time_timer: f32 = 0.;
     let mut time_txt:String = Local::now().format("%H:%M:%S").to_string();
 
-    let yameroing_it = false;
+     // easter egg wOW!
+    let r: i32 = rl.get_random_value(0..100);
+    let yameroing_it = r == 100;
+    if yameroing_it {
+        bg_scroll_speed = bpm;
+    }
+
+    let aud: RaylibAudio = RaylibAudio::init_audio_device().unwrap();
+    
+    let overbyte = include_bytes!("./res/aud/yamero.wav");
+    let overwave = aud.new_wave_from_memory(".wav", overbyte)?;
+    let over_snd  = aud.new_sound_from_wave(&overwave).unwrap();
+
     while !rl.window_should_close() {
         let mut d = rl.begin_drawing(&rt);
         let fps = format!("{}", d.get_fps());
@@ -139,15 +128,15 @@ fn main() {
         let screen_height = d.get_screen_height();
         let dt = d.get_frame_time();
 
+        if !over_snd.is_playing() && yameroing_it {
+            over_snd.play();
+        }
+
         d.draw_texture_rec(&checkerboard_bg,rrect(-bg_scroll, bg_scroll, screen_width as f32, screen_height as f32), Vector2::zero(), Color::WHITE);
         
 
-        match cfg_val!(atomget SCROLLING_BACKGROUND) {
-            true => {
-                bg_scroll -= bg_scroll_speed * dt;
-                if bg_scroll <= (-checkerboard_bg.width) as f32 {
-                    bg_scroll = 0.0
-                };
+        if cfg_val!(atomget SCROLLING_BACKGROUND) || yameroing_it  {
+                bg_scroll = (bg_scroll - bg_scroll_speed * dt) % checkerboard_bg.width as f32;
                 if yameroing_it {
                     if bg_scroll_speed > 0. {
                         bg_scroll_speed -= (bpm * dt) * (bpm / 60.);
@@ -156,8 +145,6 @@ fn main() {
                     }
                 }
             }
-            false => (),
-        }
 
         d.draw_rectangle(
             0,
@@ -182,12 +169,11 @@ fn main() {
             } else {
                 time_txt = Local::now().format("%I:%M:%S").to_string();
             }
-            time_timer = 0.;
         }
 
-        d.draw_text(&time_txt, (screen_width / 2) - (text_widths.get("clck").unwrap() / 2), layout::BUTTON_HEIGHT as i32 - layout::FONT_SIZE, layout::FONT_SIZE, style::PRIMARY_COLOR);
-        
-        for (i, btn) in navbar_buttons.clone().into_iter().enumerate() {
+        d.draw_text(&time_txt, (screen_width / 2) - (text_widths.get("clck").unwrap() / 2), layout::BUTTON_HEIGHT as i32 - layout::FONT_SIZE, layout::FONT_SIZE, clr_val!(PRIMARY_COLOR));
+
+        for (i, btn) in navbar_buttons.iter().enumerate() {
             let state = btn.draw(
                 &mut d,
                 rrect(
@@ -246,7 +232,7 @@ fn main() {
                         txt_x,
                         txt_y,
                         layout::FONT_SIZE,
-                        style::PRIMARY_COLOR,
+                        clr_val!(PRIMARY_COLOR),
                     );
                     if let Some(txt) = ICONS_SPRITESHEET.get() {
                         d.draw_texture_rec(txt, offline_rec, Vector2 {x: 0. + layout::SPACING, y: screen_height as f32 - offline_rec.height - layout::SPACING}, raylib::color::Color::WHITE);
@@ -299,7 +285,7 @@ fn main() {
                         txt_x,
                         txt_y,
                         layout::FONT_SIZE,
-                        style::PRIMARY_COLOR,
+                        clr_val!(PRIMARY_COLOR),
                     );
                 }
             }
@@ -334,13 +320,15 @@ fn main() {
             trail.draw(dt, &mut d);
         }
 
-        // It is very much intentional that the FPS draw over the Fancy Cusror (That typo in cursor is also very much intended).
         if cfg_val!(atomget SHOW_FPS) {
-            let fps_width = d.measure_text(&fps, layout::FONT_SIZE);
-            d.draw_rectangle(screen_width-fps_width, screen_height-layout::FONT_SIZE+layout::SPACING as i32, fps_width, layout::BUTTON_HEIGHT as i32, Color::new(0, 0, 0, 127));
-            d.draw_text(&fps, screen_width-fps_width-layout::SPACING as i32, screen_height-layout::FONT_SIZE+layout::SPACING as i32, layout::FONT_SIZE, style::PRIMARY_COLOR);
+            d.draw_text(&fps, layout::SPACING as i32, screen_height-layout::FONT_SIZE+layout::SPACING as i32, layout::FONT_SIZE, clr_val!(PRIMARY_COLOR));
+        }
+
+        if time_timer > 1. {
+            time_timer = 0.;
         }
     }
 
     save_config();
+    Ok(())
 }

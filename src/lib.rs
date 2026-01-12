@@ -1,6 +1,6 @@
 use raylib::prelude::*;
-use tinyjson::JsonValue;
-use std::{collections::HashMap, fs, sync::{OnceLock, atomic::AtomicBool}};
+use serde_json::Value;
+use std::{collections::{BTreeMap}, fs, sync::{OnceLock, atomic::AtomicBool}};
 use crate::cfg::config::{self, *};
 
 pub static ICONS_SPRITESHEET: OnceLock<Texture2D> = OnceLock::new();
@@ -34,22 +34,46 @@ macro_rules! cfg_val {
     };
 }
 
+#[macro_export]
+macro_rules! clr_val {
+    ($field:ident) => { *style::$field.lock().unwrap() };
+}
+
 fn atomset(a: &AtomicBool, y: bool) {
     a.store(y, std::sync::atomic::Ordering::Relaxed);
 }
 
+pub fn save_config() {
+    let mut map = BTreeMap::new();
+
+    map.insert("scrolling_bg".to_string(), Value::from(cfg_val!(atomget SCROLLING_BACKGROUND)));
+    map.insert("show_flags".to_string(), Value::from(cfg_val!(atomget SHOW_FLAG_IMAGES)));
+    map.insert("fancy_cursor".to_string(), Value::from(cfg_val!(atomget FANCY_CURSOR)));
+    map.insert("center_text".to_string(), Value::from(cfg_val!(atomget CENTER_TEXT)));
+    map.insert("show_fps".to_string(), Value::from(cfg_val!(atomget SHOW_FPS)));
+    map.insert("military_time".to_string(), Value::from(cfg_val!(atomget MILITARY_TIME)));
+    
+    map.insert("longitude".to_string(), Value::from(cfg_val!(LONGITUDE) as f64));
+    map.insert("latitude".to_string(), Value::from(cfg_val!(LATITUDE) as f64));
+    map.insert("fps".to_string(), Value::from(cfg_val!(FPS) as f64));
+
+    if let Ok(json_string) = serde_json::to_string_pretty(&map) {
+        let _ = std::fs::write("./rb.cfg", json_string);
+    }
+}
+
 pub fn load_settings() -> Result<(), Box<dyn std::error::Error>> {
     let contents = fs::read_to_string("rb.cfg")?;
-    let json: JsonValue = contents.parse()?;
+    let json: Value = serde_json::from_str(&contents)?;
 
-    let map: &HashMap<String, JsonValue> = json.get().ok_or("Config is not a JSON object")?;
+    let map = json.as_object().ok_or("Config is not a JSON object")?;
 
     let get_bool = |key: &str| -> Option<bool> {
-        map.get(key)?.get::<bool>().copied()
+        map.get(key)?.as_bool()
     };
 
     let get_num = |key: &str| -> Option<f64> {
-        map.get(key)?.get::<f64>().copied()
+        map.get(key)?.as_f64()
     };
     
     if let Some(v) = get_bool("scrolling_bg")  {atomset(&SCROLLING_BACKGROUND, v);}
@@ -94,14 +118,16 @@ pub mod cfg {
     }
 
     pub mod style {
+        use std::sync::{LazyLock, Mutex};
         use raylib::color::Color;
 
-        pub static PRIMARY_COLOR: Color = Color::RAYWHITE;
-        pub static SECONDARY_COLOR: Color = Color::BLACK;
-        pub static HOVER_COLOR: Color = Color::GRAY;
-        pub static GREEN_COLOR: Color = Color::GREEN;
-        pub static BG_COLOR1: Color = Color::new(0, 32, 0, 255);
-        pub static BG_COLOR2: Color = Color::new(0, 64, 0, 255);
+        pub static ENABLED_COLOR:  LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("00AA00").expect("Invalid hex")));
+        pub static PRIMARY_COLOR:  LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("f2ffee").expect("Invalid hex")));
+        pub static SECONDARY_COLOR:LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("000000").expect("Invalid hex")));
+        pub static HOVER_COLOR:    LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("aaaaaa").expect("Invalid hex")));
+        pub static BG_COLOR1:      LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("004400").expect("Invalid hex")));
+        pub static BG_COLOR2:      LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("005500").expect("Invalid hex")));
+
         pub static BG_POLOR1: Color = Color::new(255, 160, 255, 255);
         pub static BG_POLOR2: Color = Color::new(220, 90, 200, 255);
     }
