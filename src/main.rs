@@ -1,4 +1,5 @@
 use chrono::prelude::*;
+use clipboard_rs::{Clipboard, ClipboardContext};
 use rayball_rs::cfg::config::*;
 use rayball_rs::cfg::{layout, style, config};
 use rayball_rs::net::rooms;
@@ -18,6 +19,10 @@ fn thread_fetch(tx: mpsc::UnboundedSender<Result<Vec<Room>, String>>) {
         }).await.unwrap_or(Err("Thread join failed".to_string()));
         let _ = tx.send(data);
     });
+}
+
+fn join_link() {
+
 }
 
 #[tokio::main]
@@ -44,7 +49,7 @@ async fn main() -> Result<(), Error> {
         .build();
     
     rl.set_target_fps(cfg_val!(FPS));
-    rl.set_window_min_size(480/2, 360/2);
+    rl.set_window_min_size(320, 360/2);
     
     match load_spritesheets(&mut rl, &rt) {
         Ok(_) => {println!("Loaded textures.")},
@@ -81,12 +86,14 @@ async fn main() -> Result<(), Error> {
         SettingToggle::new("Show FPS".to_string(), &SHOW_FPS, None),
         SettingToggle::new("Center Text".to_string(), &CENTER_TEXT, None),
         SettingToggle::new("24H Clock".to_string(), &MILITARY_TIME, None),
+        SettingToggle::new("Auto-fetch rooms".to_string(), &AUTO_FETCH, None),
     ];
 
     let mut rooms_fetch_error: String = "".to_string();
     let mut rooms_list: Vec<Room> = vec![];
     let mut rooms_fetching = false;
     let mut rooms_fetched = false;
+    let mut rooms_fetched_once = false;
     let mut scroll_offset: usize = 0;
     let rooms_per_page: usize = 24;
     let scroll_amount: usize = 3;
@@ -120,6 +127,8 @@ async fn main() -> Result<(), Error> {
     let overbyte = include_bytes!("./res/aud/yamero.wav");
     let overwave = aud.new_wave_from_memory(".wav", overbyte)?;
     let over_snd  = aud.new_sound_from_wave(&overwave).unwrap();
+    
+    let ctx = ClipboardContext::new().unwrap();
 
     while !rl.window_should_close() {
         let mut d = rl.begin_drawing(&rt);
@@ -127,6 +136,7 @@ async fn main() -> Result<(), Error> {
         let screen_width = d.get_screen_width();
         let screen_height = d.get_screen_height();
         let dt = d.get_frame_time();
+        let mut mouse_occupied = false;
 
         if !over_snd.is_playing() && yameroing_it {
             over_snd.play();
@@ -195,6 +205,14 @@ async fn main() -> Result<(), Error> {
 
         match current_screen {
             Screens::ServerList => {
+                if d.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) && d.is_key_pressed(KeyboardKey::KEY_V) {
+                    let code: String = ctx.get_text()
+                        .and_then(|t| Ok(url::Url::parse(&t).map(|url| url.to_string())?))
+                        .unwrap_or_else(|e| e.to_string());
+
+                    println!("{}", code);
+                }
+
                 let wheel = d.get_mouse_wheel_move();
                 if wheel < 0.0 {
                     scroll_offset =
@@ -203,7 +221,8 @@ async fn main() -> Result<(), Error> {
                     scroll_offset = scroll_offset.saturating_sub(scroll_amount);
                 }
 
-                if !rooms_fetching {
+                if !(!cfg_val!(atomget AUTO_FETCH) && !rooms_fetched_once) && !rooms_fetching {
+                    rooms_fetched_once = true;
                     thread_fetch(tx.clone());
                     rooms_fetching = true
                 }
@@ -239,6 +258,13 @@ async fn main() -> Result<(), Error> {
                     }
                 }
 
+                if !rooms_fetching && d.is_key_pressed(KeyboardKey::KEY_R) {
+                        rooms_list = vec![];
+                        rooms_fetching = false;
+                        rooms_fetched = false;
+                        rooms_fetched_once = true;
+                }
+
                 if rooms_fetched {
                     let mut room_list_x = screen_width / 2;
                     let mut room_list_y = screen_height / 2;
@@ -271,7 +297,7 @@ async fn main() -> Result<(), Error> {
                         rooms_fetching = false;
                         rooms_fetched = false;
                     }
-                } else {
+                } else if rooms_fetched_once {
                     amount_of_dots_in_loading_text += 10. * dt;
                     let datextitself = format!(
                         "Fetching rooms{}",

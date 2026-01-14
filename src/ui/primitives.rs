@@ -14,11 +14,17 @@ use crate::cfg::style;
 
 pub struct Interaction;
 impl Interaction {
-    pub fn check(rect: Rectangle, d: &RaylibDrawHandle) -> (bool, bool) {
+    pub fn check(rect: Rectangle, d: &RaylibDrawHandle, occupied: &mut bool) -> (bool, bool) {
         let m = d.get_mouse_position();
         let mouse_over = rect.check_collision_point_rec(m);
-        let clicked = mouse_over && d.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
-        (mouse_over, clicked)
+        if mouse_over && !*occupied {
+            let clicked = d.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
+            if clicked {
+                *occupied = true;
+            }
+            return (true, clicked);
+        }
+        (false, false)
     }
 
     pub fn resolve_color(mouse_over: bool, toggled: bool) -> Color {
@@ -204,7 +210,7 @@ impl IconButton {
         }
     }
 
-    pub fn draw(&self, d: &mut RaylibDrawHandle, rect: Rectangle) -> Option<Screens> {
+    pub fn draw(&self, d: &mut RaylibDrawHandle, rect: Rectangle, ) -> Option<Screens> {
         let (mouse_over, clicked) = Interaction::check(rect, d);
         self.draw_content(rect, d, mouse_over);
         if mouse_over && clicked {
