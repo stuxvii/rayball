@@ -5,13 +5,14 @@
 ```
 rayball is a very early work in progress reimplementation of the H\*xBall client with biased additions, built using raylib.
 
-### todo list
+### features
 - [x] server list
-- [ ] in-game clock
+- [x] in-game clock
 - [ ] server joining
-  - [ ] chat
-  - [ ] gameplay
-  - [ ] extrapolation
+  - [ ] websocket handshake
+  - [ ] password check
+  - [ ] webrtc
+  - [ ] probably more things
 - [x] settings save
 - [x] better ui
 - [x] better ux
