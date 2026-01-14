@@ -105,6 +105,7 @@ pub mod cfg {
         pub static DISTANCE_WIDTH: i32 = 48;
     }
 
+    /// Settings that can be toggled by the user.
     pub mod config {
         use std::sync::{Mutex, atomic::AtomicBool};
 
@@ -134,17 +135,6 @@ pub mod cfg {
         pub static BG_POLOR1: Color = Color::new(255, 160, 255, 255);
         pub static BG_POLOR2: Color = Color::new(220, 90, 200, 255);
     }
-}
-
-/// Settings that can be toggled by the user.
-
-pub enum Settings {
-    ShowFlags = 0,
-    UseFancyCursor = 1,
-    ScrollingBG = 2,
-    ShowFPS = 3,
-    CenterText = 4,
-    MilitaryTime = 5,
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -4,7 +4,7 @@ use rayball_rs::cfg::config::*;
 use rayball_rs::cfg::{layout, style, config};
 use rayball_rs::net::rooms;
 use rayball_rs::ui::cursor::CursorTrail;
-use rayball_rs::ui::primitives::{ IconButton, Interaction, Room, SettingToggle};
+use rayball_rs::ui::primitives::{ Button, IconButton, Interaction, Room, SettingToggle};
 use rayball_rs::*;
 use raylib::error::Error;
 use raylib::prelude::*;
@@ -104,6 +104,7 @@ async fn main() -> Result<(), Error> {
     let text_widths = HashMap::from([
         ("list", rl.measure_text(&"W".repeat(48), layout::FONT_SIZE)),
         ("clck", rl.measure_text(&"00:00:00", layout::FONT_SIZE)),
+        ("erro", rl.measure_text(&"Error!", layout::FONT_SIZE)),
     ]);
 
     let bpm = 164.;
@@ -115,8 +116,12 @@ async fn main() -> Result<(), Error> {
 
     let mut time_timer: f32 = 0.;
     let mut time_txt:String = Local::now().format("%H:%M:%S").to_string();
-
-     // easter egg wOW!
+    
+    let ctx = ClipboardContext::new().unwrap();
+    let mut error_box_showing = false;
+    let mut error_box_msg: String = "".to_string();
+    let error_acknowledge_btn: Button = Button::new("aight".to_string());
+    // easter egg wOW!
     let r: i32 = rl.get_random_value(0..100);
     let yameroing_it = r == 100;
     if yameroing_it {
@@ -128,8 +133,6 @@ async fn main() -> Result<(), Error> {
     let overbyte = include_bytes!("./res/aud/yamero.wav");
     let overwave = aud.new_wave_from_memory(".wav", overbyte)?;
     let over_snd  = aud.new_sound_from_wave(&overwave).unwrap();
-    
-    let ctx = ClipboardContext::new().unwrap();
 
     while !rl.window_should_close() {
         let mut d = rl.begin_drawing(&rt);
@@ -178,10 +181,19 @@ async fn main() -> Result<(), Error> {
 
         d.draw_text(&time_txt, (screen_width / 2) - (text_widths.get("clck").unwrap() / 2), layout::BUTTON_HEIGHT as i32 - layout::FONT_SIZE, layout::FONT_SIZE, clr_val!(PRIMARY_COLOR));
         
-        // we can actually start drawing things now
+        let error_overlay_rect = rrect(0, 0, screen_width, screen_height);
+        
+        let boxs = 200;
+        let boxr = rrect(screen_width/2-boxs/2, screen_height/2-boxs/4, boxs, boxs);
+        let bokr = rrect(screen_width/2-15, (screen_height/2+boxs/2)+30, 30, layout::BUTTON_HEIGHT);
+        let (mut error_ack_hover, mut error_ack_click): (bool, bool) = (false, false);
+        
+        if error_box_showing {
+            (error_ack_hover, error_ack_click) = Interaction::check(bokr, &d, &mut mouse_occupied);
+            let (_,_) = Interaction::check(error_overlay_rect, &d, &mut mouse_occupied);
+        }
 
-        let rect = rrect(0, 0, screen_width, screen_height);
-        let (_,_) = Interaction::check(rect, &d, &mut mouse_occupied);
+        // we can actually start drawing things now
 
         for (i, btn) in navbar_buttons.iter().enumerate() {
             let rect = rrect(
@@ -209,7 +221,10 @@ async fn main() -> Result<(), Error> {
                         .and_then(|t| Ok(url::Url::parse(&t).map(|url| url.to_string())?))
                         .unwrap_or_else(|e| e.to_string());
 
-                    println!("{}", code);
+                    if code.len() != 11 { // every code should be 11 chars long. if it isn't chances are it's an error
+                        error_box_showing = true;
+                        error_box_msg = code.clone();
+                    }
                 }
 
                 let wheel = d.get_mouse_wheel_move();
@@ -258,10 +273,10 @@ async fn main() -> Result<(), Error> {
                 }
 
                 if !rooms_fetching && d.is_key_pressed(KeyboardKey::KEY_R) {
-                        rooms_list = vec![];
-                        rooms_fetching = false;
-                        rooms_fetched = false;
-                        rooms_fetched_once = true;
+                    rooms_list = vec![];
+                    rooms_fetching = false;
+                    rooms_fetched = false;
+                    rooms_fetched_once = true;
                 }
 
                 if rooms_fetched {
@@ -344,7 +359,18 @@ async fn main() -> Result<(), Error> {
             _ => (),
         }
 
-        d.draw_rectangle_rec(rect, Color::new(0, 0, 0, 127));
+        if error_box_showing {
+            d.draw_rectangle_rec(error_overlay_rect, Color::new(0, 0, 0, 127));
+            let txt = error_box_msg.as_str();
+            let txt_w = d.measure_text(txt, layout::FONT_SIZE);
+            d.draw_rectangle_rec(boxr, clr_val!(SECONDARY_COLOR));
+            d.draw_text("Error:", (boxr.x as i32+boxs/2)-text_widths.get("erro").unwrap()/2, boxr.y as i32, layout::FONT_SIZE, clr_val!(PRIMARY_COLOR));
+            d.draw_text(txt, (boxr.x as i32+boxs/2)-txt_w/2, boxr.y as i32+layout::BUTTON_HEIGHT as i32, layout::FONT_SIZE, clr_val!(PRIMARY_COLOR));
+            if error_acknowledge_btn.draw(bokr, &mut d, error_ack_hover, error_ack_click) {
+                error_box_showing = false;
+                error_box_msg = "".to_string();
+            }
+        }
 
         if cfg_val!(atomget FANCY_CURSOR) {
             trail.draw(dt, &mut d);

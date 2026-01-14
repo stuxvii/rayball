@@ -161,18 +161,16 @@ impl ButtonContent for Room {
             height: 11.0,
         };
 
-        if self.locked {
-            if let Some(tex) = ICONS_SPRITESHEET.get() {
-                d.draw_texture_rec(
-                    tex,
-                    lock_text_rec,
-                    Vector2 {
-                        y: lock_bg_rect.y + layout::SPACING,
-                        x: lock_bg_rect.x + layout::SPACING,
-                    },
-                    raylib::color::Color::WHITE,
-                );
-            }
+        if self.locked && let Some(tex) = ICONS_SPRITESHEET.get() {
+            d.draw_texture_rec(
+                tex,
+                lock_text_rec,
+                Vector2 {
+                    y: lock_bg_rect.y + layout::SPACING,
+                    x: lock_bg_rect.x + layout::SPACING,
+                },
+                raylib::color::Color::WHITE,
+            );
         }
     }
 }
@@ -231,6 +229,7 @@ pub struct Room {
 }
 
 impl Room {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         text: String,
         id: String,
