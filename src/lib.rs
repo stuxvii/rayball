@@ -128,12 +128,6 @@ pub mod cfg {
         pub static ENABLED_COLOR:  LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("00AA00").expect("Invalid hex")));
         pub static PRIMARY_COLOR:  LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("f2ffee").expect("Invalid hex")));
         pub static SECONDARY_COLOR:LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("000000").expect("Invalid hex")));
-        pub static HOVER_COLOR:    LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("aaaaaa").expect("Invalid hex")));
-        pub static BG_COLOR1:      LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("004400").expect("Invalid hex")));
-        pub static BG_COLOR2:      LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("005500").expect("Invalid hex")));
-
-        pub static BG_POLOR1: Color = Color::new(255, 160, 255, 255);
-        pub static BG_POLOR2: Color = Color::new(220, 90, 200, 255);
     }
 }
 

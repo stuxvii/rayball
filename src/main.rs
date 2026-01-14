@@ -4,7 +4,7 @@ use rayball_rs::cfg::config::*;
 use rayball_rs::cfg::{layout, style, config};
 use rayball_rs::net::rooms;
 use rayball_rs::ui::cursor::CursorTrail;
-use rayball_rs::ui::primitives::{ Button, IconButton, Interaction, Room, SettingToggle};
+use rayball_rs::ui::primitives::{Room, SettingData};
 use rayball_rs::*;
 use raylib::error::Error;
 use raylib::prelude::*;
@@ -21,15 +21,17 @@ fn thread_fetch(tx: mpsc::UnboundedSender<Result<Vec<Room>, String>>) {
     });
 }
 
-#[allow(dead_code)]
-fn join_link() {
+fn get_gui_color(style_property: i32) -> Color {
+    let r = ((style_property >> 24) & 0xFF) as u8;
+    let g = ((style_property >> 16) & 0xFF) as u8;
+    let b = ((style_property >> 8) & 0xFF) as u8;
+    let a = (style_property & 0xFF) as u8;
 
+    Color::new(r, g, b, a)
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    clr_val!(ENABLED_COLOR) = Color::from_hex("004400").expect("Invalid hex");
-
     match load_settings() {
         Ok(_) => {
             println!("Successfully loaded configuration!");
@@ -48,13 +50,16 @@ async fn main() -> Result<(), Error> {
         .title("rayball")
         .size(640, 480)
         .build();
-    
+
+    rl.gui_load_style("./res/style.rgs");
     rl.set_target_fps(cfg_val!(FPS));
     rl.set_window_min_size(320, 360/2);
-    
+
+    clr_val!(SECONDARY_COLOR) = get_gui_color(rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BASE_COLOR_NORMAL));
+
     match load_spritesheets(&mut rl, &rt) {
         Ok(_) => {println!("Loaded textures.")},
-        Err(e) => {println!("Epic fail loading textures: {}.", e)},
+        Err(e) => {panic!("Epic fail loading textures: {}.", e)},
     };
 
     let image_size = 64;
@@ -62,9 +67,11 @@ async fn main() -> Result<(), Error> {
 
     let image_size_f: f32 = image_size as f32;
     
-    image.draw_line_ex(Vector2 {x: image_size_f, y: 0.}, Vector2 {x: 0., y: image_size_f}, image_size/2, clr_val!(BG_COLOR2));
-    image.draw_line_ex(Vector2 {x: 0., y: 0.}, Vector2 {x: image_size_f, y: image_size_f}, image_size, clr_val!(BG_COLOR1));
-    image.draw_line_ex(Vector2 {x: 0., y: 0.}, Vector2 {x: image_size_f, y: image_size_f}, (image_size_f/2.2) as i32, clr_val!(BG_COLOR2));
+    let bg_color1 = rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BASE_COLOR_NORMAL);
+    let bg_color2 = rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BORDER_COLOR_NORMAL); 
+    image.draw_line_ex(Vector2 {x: image_size_f, y: 0.}, Vector2 {x: 0., y: image_size_f}, image_size/2, get_gui_color(bg_color2));
+    image.draw_line_ex(Vector2 {x: 0., y: 0.}, Vector2 {x: image_size_f, y: image_size_f}, image_size, get_gui_color(bg_color1));
+    image.draw_line_ex(Vector2 {x: 0., y: 0.}, Vector2 {x: image_size_f, y: image_size_f}, (image_size_f/2.2) as i32, get_gui_color(bg_color2));
 
     let checkerboard_bg: Texture2D = rl.load_texture_from_image(&rt, &image).unwrap();
 
@@ -74,20 +81,21 @@ async fn main() -> Result<(), Error> {
     }
 
     let offline_rec = rrect(22, 0, 13, 11);
-    let navbar_buttons: Vec<IconButton> = vec![
-        IconButton::new(rrect(0.0, 0.0, 11.0, 11.0), Screens::ServerList),
-        IconButton::new(rrect(11.0, 0.0, 11.0, 11.0), Screens::Configuration),
-        IconButton::new(rrect(44.0, 0.0, 11.0, 11.0), Screens::GithubLink),
+    struct NavIcon { rect: Rectangle, screen: Screens }
+    let navbar_buttons: Vec<NavIcon> = vec![
+        NavIcon { rect: rrect(0.0, 0.0, 11.0, 11.0), screen: Screens::ServerList },
+        NavIcon { rect: rrect(11.0, 0.0, 11.0, 11.0), screen: Screens::Configuration },
+        NavIcon { rect: rrect(44.0, 0.0, 11.0, 11.0), screen: Screens::GithubLink },
     ];
 
-    let mut setting_toggles: Vec<SettingToggle> = vec![
-        SettingToggle::new("Show Flags".to_string(), &SHOW_FLAG_IMAGES, None),
-        SettingToggle::new("Fancy Cursor".to_string(), &FANCY_CURSOR, Some(|on, d|{if on{d.hide_cursor();}else{d.show_cursor();}})),
-        SettingToggle::new("Scrolling BG".to_string(), &SCROLLING_BACKGROUND, None),
-        SettingToggle::new("Show FPS".to_string(), &SHOW_FPS, None),
-        SettingToggle::new("Center Text".to_string(), &CENTER_TEXT, None),
-        SettingToggle::new("24H Clock".to_string(), &MILITARY_TIME, None),
-        SettingToggle::new("Auto-fetch rooms".to_string(), &AUTO_FETCH, None),
+    let mut setting_toggles: Vec<SettingData> = vec![
+        SettingData::new("Show Flags".to_string(), &SHOW_FLAG_IMAGES, None),
+        SettingData::new("Fancy Cursor".to_string(), &FANCY_CURSOR, Some(|on, d|{if on{d.hide_cursor();}else{d.show_cursor();}})),
+        SettingData::new("Scrolling BG".to_string(), &SCROLLING_BACKGROUND, None),
+        SettingData::new("Show FPS".to_string(), &SHOW_FPS, None),
+        SettingData::new("Center Text".to_string(), &CENTER_TEXT, None),
+        SettingData::new("24H Clock".to_string(), &MILITARY_TIME, None),
+        SettingData::new("Auto-fetch rooms".to_string(), &AUTO_FETCH, None),
     ];
 
     let mut rooms_fetch_error: String = "".to_string();
@@ -120,7 +128,7 @@ async fn main() -> Result<(), Error> {
     let ctx = ClipboardContext::new().unwrap();
     let mut error_box_showing = false;
     let mut error_box_msg: String = "".to_string();
-    let error_acknowledge_btn: Button = Button::new("aight".to_string());
+    
     // easter egg wOW!
     let r: i32 = rl.get_random_value(0..100);
     let yameroing_it = r == 100;
@@ -132,19 +140,17 @@ async fn main() -> Result<(), Error> {
     
     let overbyte = include_bytes!("./res/aud/yamero.wav");
     let overwave = aud.new_wave_from_memory(".wav", overbyte)?;
-    let over_snd  = aud.new_sound_from_wave(&overwave).unwrap();
-
+    let over_snd= aud.new_sound_from_wave(&overwave).unwrap();
+    
     while !rl.window_should_close() {
         let mut d = rl.begin_drawing(&rt);
         let fps = format!("{}", d.get_fps());
         let screen_width = d.get_screen_width();
         let screen_height = d.get_screen_height();
         let dt = d.get_frame_time();
-        let mut mouse_occupied = false;
 
         if !over_snd.is_playing() && yameroing_it {over_snd.play();}
         d.draw_texture_rec(&checkerboard_bg,rrect(-bg_scroll, bg_scroll, screen_width as f32, screen_height as f32), Vector2::zero(), Color::WHITE);
-        
         if cfg_val!(atomget SCROLLING_BACKGROUND) || yameroing_it  {
             bg_scroll = (bg_scroll - bg_scroll_speed * dt) % checkerboard_bg.width as f32;
             if yameroing_it {
@@ -171,7 +177,7 @@ async fn main() -> Result<(), Error> {
         
         time_timer += dt;
 
-        if time_timer > 0.5 { // wouldn't want to just hammer this func
+        if time_timer > 0.5 {
             let mut fmt = "%I:%M:%S";
             if cfg_val!(atomget MILITARY_TIME) {
                 fmt = "%H:%M:%S";
@@ -180,18 +186,6 @@ async fn main() -> Result<(), Error> {
         }
 
         d.draw_text(&time_txt, (screen_width / 2) - (text_widths.get("clck").unwrap() / 2), layout::BUTTON_HEIGHT as i32 - layout::FONT_SIZE, layout::FONT_SIZE, clr_val!(PRIMARY_COLOR));
-        
-        let error_overlay_rect = rrect(0, 0, screen_width, screen_height);
-        
-        let boxs = 200;
-        let boxr = rrect(screen_width/2-boxs/2, screen_height/2-boxs/4, boxs, boxs);
-        let bokr = rrect(screen_width/2-15, (screen_height/2+boxs/2)+30, 30, layout::BUTTON_HEIGHT);
-        let (mut error_ack_hover, mut error_ack_click): (bool, bool) = (false, false);
-        
-        if error_box_showing {
-            (error_ack_hover, error_ack_click) = Interaction::check(bokr, &d, &mut mouse_occupied);
-            let (_,_) = Interaction::check(error_overlay_rect, &d, &mut mouse_occupied);
-        }
 
         // we can actually start drawing things now
 
@@ -202,16 +196,25 @@ async fn main() -> Result<(), Error> {
                     layout::BUTTON_HEIGHT,
                     layout::BUTTON_HEIGHT,
                 );
-            let (hover, clicked) = Interaction::check(rect, &d, &mut mouse_occupied);
-            let state = btn.draw(&mut d,rect,hover,clicked);
-            if let Some(new_screen) = state {
-                match new_screen {
-                    Screens::GithubLink => {
-                        open_url("https://github.com/stuxvii/rayball");
-                    }
-                    _ => current_screen = new_screen,
+            if d.gui_button(rect, "") {
+                match btn.screen {
+                    Screens::GithubLink => { open_url("https://github.com/stuxvii/rayball"); }
+                    _ => current_screen = btn.screen,
                 }
-            };
+            }
+            if let Some(txt) = ICONS_SPRITESHEET.get() {
+                let mut txt_cntr = Vector2 { x: rect.x, y: rect.y };
+                let negative = Vector2 {
+                    x: rect.width - btn.rect.width,
+                    y: rect.height - btn.rect.height,
+                };
+                txt_cntr.x -= negative.x;
+                txt_cntr.y -= negative.y;
+                txt_cntr.x += negative.x * 1.5;
+                txt_cntr.y += negative.y * 1.5;
+
+                d.draw_texture_rec(txt, btn.rect, txt_cntr, clr_val!(PRIMARY_COLOR));
+            }
         }
 
         match current_screen {
@@ -303,8 +306,7 @@ async fn main() -> Result<(), Error> {
                             width: *text_widths.get("list").unwrap() as f32,
                             height: layout::BUTTON_HEIGHT,
                         };
-                        let (hover, clicked) = Interaction::check(rect, &d, &mut mouse_occupied);
-                        if room.draw(&mut d, rect, hover, clicked) {};
+                        if room.draw(&mut d, rect) {};
                     }
                                         
                     if d.is_key_pressed(KeyboardKey::KEY_R) {
@@ -333,25 +335,22 @@ async fn main() -> Result<(), Error> {
             Screens::Configuration => {
                 let setting_toggles_len = setting_toggles.len() as f32;
                 for (display_index, btn) in setting_toggles.iter_mut().enumerate() {
-                    let btn_width = 128;
                     let mut rect = rrect(
                         screen_width / 2,
                         layout::BUTTON_HEIGHT * display_index as f32,
-                        btn_width,
+                        layout::FONT_SIZE,
                         layout::FONT_SIZE,
                     );
                     rect.y += (screen_height/2) as f32;
                     rect.y -= (layout::BUTTON_HEIGHT * setting_toggles_len) / 2.;
-                    rect.x -= (btn_width / 2) as f32;
-                    
-                    let (hover, clicked) = Interaction::check(rect, &d, &mut mouse_occupied);
-                    btn.draw(rect, &mut d, hover, clicked);
-                    if clicked {
-                        let on = btn.target.load(std::sync::atomic::Ordering::Relaxed);
-                        btn.target.store(on, std::sync::atomic::Ordering::Relaxed);
-                        
+                    rect.x -= 40.;
+
+                    let old_val = btn.target.load(std::sync::atomic::Ordering::Relaxed);
+                    let mut current_val: bool = old_val;
+                    if d.gui_check_box(rect, &btn.text, &mut current_val) {
+                        btn.target.store(current_val, std::sync::atomic::Ordering::Relaxed);
                         if let Some(act) = btn.callback {
-                            act(on, &mut d);
+                            act(current_val, &mut d);
                         }
                     }
                 }
@@ -360,13 +359,20 @@ async fn main() -> Result<(), Error> {
         }
 
         if error_box_showing {
-            d.draw_rectangle_rec(error_overlay_rect, Color::new(0, 0, 0, 127));
-            let txt = error_box_msg.as_str();
-            let txt_w = d.measure_text(txt, layout::FONT_SIZE);
-            d.draw_rectangle_rec(boxr, clr_val!(SECONDARY_COLOR));
-            d.draw_text("Error:", (boxr.x as i32+boxs/2)-text_widths.get("erro").unwrap()/2, boxr.y as i32, layout::FONT_SIZE, clr_val!(PRIMARY_COLOR));
-            d.draw_text(txt, (boxr.x as i32+boxs/2)-txt_w/2, boxr.y as i32+layout::BUTTON_HEIGHT as i32, layout::FONT_SIZE, clr_val!(PRIMARY_COLOR));
-            if error_acknowledge_btn.draw(bokr, &mut d, error_ack_hover, error_ack_click) {
+            let error_rect = rrect(
+                screen_width / 2 - 100, 
+                screen_height / 2 - 45, 
+                200, 
+                100
+            );
+
+            let title = String::from("error");
+            let msg = String::from(error_box_msg.clone());
+            let btns = String::from("ok sorry");
+            d.gui_unlock();
+            let result = d.gui_message_box(error_rect, &title, &msg, &btns);
+            d.gui_lock();
+            if result >= 0 {
                 error_box_showing = false;
                 error_box_msg = "".to_string();
             }
