@@ -18,10 +18,8 @@ impl Interaction {
         let m = d.get_mouse_position();
         let mouse_over = rect.check_collision_point_rec(m);
         if mouse_over && !*occupied {
+            *occupied = true;
             let clicked = d.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
-            if clicked {
-                *occupied = true;
-            }
             return (true, clicked);
         }
         (false, false)
@@ -189,8 +187,7 @@ impl Button {
         Button { text }
     }
 
-    pub fn draw(&self, rect: Rectangle, d: &mut RaylibDrawHandle) -> bool {
-        let (mouse_over, clicked) = Interaction::check(rect, d);
+    pub fn draw(&self, rect: Rectangle, d: &mut RaylibDrawHandle, mouse_over: bool, clicked: bool) -> bool {
         self.draw_content(rect, d, mouse_over);
         mouse_over && clicked
     }
@@ -210,8 +207,7 @@ impl IconButton {
         }
     }
 
-    pub fn draw(&self, d: &mut RaylibDrawHandle, rect: Rectangle, ) -> Option<Screens> {
-        let (mouse_over, clicked) = Interaction::check(rect, d);
+    pub fn draw(&self, d: &mut RaylibDrawHandle, rect: Rectangle, mouse_over: bool, clicked: bool) -> Option<Screens> {
         self.draw_content(rect, d, mouse_over);
         if mouse_over && clicked {
             Some(self.target)
@@ -259,8 +255,7 @@ impl Room {
         }
     }
 
-    pub fn draw(&mut self, d: &mut RaylibDrawHandle, rect: Rectangle) -> bool {
-        let (mouse_over, clicked) = Interaction::check(rect, d);
+    pub fn draw(&mut self, d: &mut RaylibDrawHandle, rect: Rectangle, mouse_over: bool, clicked: bool) -> bool {
         self.draw_content(rect, d, mouse_over);
         clicked && mouse_over
     }
@@ -281,9 +276,7 @@ impl SettingToggle {
         }
     }
 
-    pub fn draw(&mut self, rect: Rectangle, d: &mut RaylibDrawHandle) -> bool {
-        let (mouse_over, clicked) = Interaction::check(rect, d);
-
+    pub fn draw(&mut self, rect: Rectangle, d: &mut RaylibDrawHandle, mouse_over: bool, clicked: bool) -> bool {
         if clicked && mouse_over {
             self.target.store(!self.target.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
         }

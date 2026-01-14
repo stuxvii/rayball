@@ -4,7 +4,7 @@ use rayball_rs::cfg::config::*;
 use rayball_rs::cfg::{layout, style, config};
 use rayball_rs::net::rooms;
 use rayball_rs::ui::cursor::CursorTrail;
-use rayball_rs::ui::primitives::{ IconButton, Room, SettingToggle};
+use rayball_rs::ui::primitives::{ IconButton, Interaction, Room, SettingToggle};
 use rayball_rs::*;
 use raylib::error::Error;
 use raylib::prelude::*;
@@ -21,6 +21,7 @@ fn thread_fetch(tx: mpsc::UnboundedSender<Result<Vec<Room>, String>>) {
     });
 }
 
+#[allow(dead_code)]
 fn join_link() {
 
 }
@@ -138,23 +139,19 @@ async fn main() -> Result<(), Error> {
         let dt = d.get_frame_time();
         let mut mouse_occupied = false;
 
-        if !over_snd.is_playing() && yameroing_it {
-            over_snd.play();
-        }
-
+        if !over_snd.is_playing() && yameroing_it {over_snd.play();}
         d.draw_texture_rec(&checkerboard_bg,rrect(-bg_scroll, bg_scroll, screen_width as f32, screen_height as f32), Vector2::zero(), Color::WHITE);
         
-
         if cfg_val!(atomget SCROLLING_BACKGROUND) || yameroing_it  {
-                bg_scroll = (bg_scroll - bg_scroll_speed * dt) % checkerboard_bg.width as f32;
-                if yameroing_it {
-                    if bg_scroll_speed > 0. {
-                        bg_scroll_speed -= (bpm * dt) * (bpm / 60.);
-                    } else {
-                        bg_scroll_speed  = bpm;
-                    }
+            bg_scroll = (bg_scroll - bg_scroll_speed * dt) % checkerboard_bg.width as f32;
+            if yameroing_it {
+                if bg_scroll_speed > 0. {
+                    bg_scroll_speed -= (bpm * dt) * (bpm / 60.);
+                } else {
+                    bg_scroll_speed  = bpm;
                 }
             }
+        }
 
         d.draw_rectangle(
             0,
@@ -168,31 +165,33 @@ async fn main() -> Result<(), Error> {
                 a: 191,
             },
         );
-
-        // we can actually start drawing things now
         
         time_timer += dt;
 
         if time_timer > 0.5 { // wouldn't want to just hammer this func
+            let mut fmt = "%I:%M:%S";
             if cfg_val!(atomget MILITARY_TIME) {
-                time_txt = Local::now().format("%H:%M:%S").to_string();
-            } else {
-                time_txt = Local::now().format("%I:%M:%S").to_string();
+                fmt = "%H:%M:%S";
             }
+            time_txt = Local::now().format(fmt).to_string()
         }
 
         d.draw_text(&time_txt, (screen_width / 2) - (text_widths.get("clck").unwrap() / 2), layout::BUTTON_HEIGHT as i32 - layout::FONT_SIZE, layout::FONT_SIZE, clr_val!(PRIMARY_COLOR));
+        
+        // we can actually start drawing things now
+
+        let rect = rrect(0, 0, screen_width, screen_height);
+        let (_,_) = Interaction::check(rect, &d, &mut mouse_occupied);
 
         for (i, btn) in navbar_buttons.iter().enumerate() {
-            let state = btn.draw(
-                &mut d,
-                rrect(
+            let rect = rrect(
                     i as f32 * layout::BUTTON_HEIGHT as f32,
                     0,
                     layout::BUTTON_HEIGHT,
                     layout::BUTTON_HEIGHT,
-                ),
-            );
+                );
+            let (hover, clicked) = Interaction::check(rect, &d, &mut mouse_occupied);
+            let state = btn.draw(&mut d,rect,hover,clicked);
             if let Some(new_screen) = state {
                 match new_screen {
                     Screens::GithubLink => {
@@ -289,7 +288,8 @@ async fn main() -> Result<(), Error> {
                             width: *text_widths.get("list").unwrap() as f32,
                             height: layout::BUTTON_HEIGHT,
                         };
-                        if room.draw(&mut d, rect) {};
+                        let (hover, clicked) = Interaction::check(rect, &d, &mut mouse_occupied);
+                        if room.draw(&mut d, rect, hover, clicked) {};
                     }
                                         
                     if d.is_key_pressed(KeyboardKey::KEY_R) {
@@ -328,7 +328,9 @@ async fn main() -> Result<(), Error> {
                     rect.y += (screen_height/2) as f32;
                     rect.y -= (layout::BUTTON_HEIGHT * setting_toggles_len) / 2.;
                     rect.x -= (btn_width / 2) as f32;
-                    let clicked = btn.draw(rect, &mut d);
+                    
+                    let (hover, clicked) = Interaction::check(rect, &d, &mut mouse_occupied);
+                    btn.draw(rect, &mut d, hover, clicked);
                     if clicked {
                         let on = btn.target.load(std::sync::atomic::Ordering::Relaxed);
                         btn.target.store(on, std::sync::atomic::Ordering::Relaxed);
@@ -341,6 +343,8 @@ async fn main() -> Result<(), Error> {
             }
             _ => (),
         }
+
+        d.draw_rectangle_rec(rect, Color::new(0, 0, 0, 127));
 
         if cfg_val!(atomget FANCY_CURSOR) {
             trail.draw(dt, &mut d);
