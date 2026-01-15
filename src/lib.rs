@@ -154,4 +154,5 @@ pub mod ui {
 
 pub mod net {
     pub mod rooms;
+    pub mod join;
 }
