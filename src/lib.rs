@@ -1,3 +1,4 @@
+use chrono::Local;
 use raylib::prelude::*;
 use serde_json::Value;
 use std::{collections::{BTreeMap}, fs, sync::{OnceLock, atomic::AtomicBool}};
@@ -144,6 +145,21 @@ impl From<usize> for Screens {
             0 => Self::ServerList,
             1 => Screens::Configuration,
             _ => Self::ServerList
+        }
+    }
+}
+
+pub struct Alert { 
+    pub text: String,
+    pub fade: bool,
+    pub creation: i64 
+}
+impl Alert {
+    pub fn new(text: String, fade: bool) -> Alert {
+        Alert {
+            text,
+            fade,
+            creation: Local::now().timestamp()
         }
     }
 }

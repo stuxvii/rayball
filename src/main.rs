@@ -2,13 +2,14 @@ use chrono::prelude::*;
 use clipboard_rs::{Clipboard, ClipboardContext};
 use rayball_rs::cfg::config::*;
 use rayball_rs::cfg::{layout, style, config};
-use rayball_rs::net::join::parse_code;
+use rayball_rs::net::join::*;
 use rayball_rs::net::rooms;
 use rayball_rs::ui::cursor::CursorTrail;
 use rayball_rs::ui::primitives::{Room, SettingData};
 use rayball_rs::*;
 use raylib::error::Error;
 use raylib::prelude::*;
+use rustls::crypto::CryptoProvider;
 use std::collections::HashMap;
 use std::vec;
 use tokio::sync::mpsc;
@@ -34,6 +35,8 @@ fn get_gui_color(style_property: i32) -> Color {
 #[allow(unused)]
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    rustls::crypto::ring::default_provider().install_default().expect("Failed to install rustls crypto provider");
+    
     match load_settings() {
         Ok(_) => {
             println!("Successfully loaded configuration!");
@@ -101,8 +104,7 @@ async fn main() -> Result<(), Error> {
         SettingData::new("Auto-fetch rooms".to_string(), &AUTO_FETCH, None),
     ];
 
-    struct Error { error: String }
-    let mut errors: Vec<Error> = vec![];
+    let mut errors: Vec<Alert> = vec![];
 
     let mut rooms_fetch_error: String = "".to_string();
     let mut rooms_list: Vec<Room> = vec![];
@@ -111,7 +113,7 @@ async fn main() -> Result<(), Error> {
     let mut rooms_fetched_once = false;
     let mut in_game = false;
     let mut scroll_offset: usize = 0;
-    let rooms_per_page: usize = 24;
+    let mut rooms_per_page: usize = 24;
     let scroll_amount: usize = 3;
 
     let mut current_screen: Screens = Screens::ServerList;
@@ -183,10 +185,6 @@ async fn main() -> Result<(), Error> {
 
             // we can actually start drawing things now
 
-            if errors.len() > 0 {
-                d.gui_lock();
-            }
-
             for (i, btn) in navbar_buttons.iter().enumerate() {
                 let rect = rrect(
                         i as f32 * layout::BUTTON_HEIGHT as f32,
@@ -221,22 +219,18 @@ async fn main() -> Result<(), Error> {
                         let clip = ctx.get_text().unwrap();
                         match parse_code(clip) {
                             Ok(c) => {
-                                todo!("{}", c);
+                                try_to_join_room(c).await;
                             },
                             Err(e) => {
-                                let new_error = Error { error: e.to_string() };
-                                errors.push(new_error);
+                                
+                                errors.push(Alert::new(e.to_string(), true));
                             }
                         }
                     }
 
                     let wheel = d.get_mouse_wheel_move();
-                    if wheel < 0.0 {
-                        scroll_offset =
-                            (scroll_offset + scroll_amount).min(rooms_list.len() - rooms_per_page);
-                    } else if wheel > 0.0 {
-                        scroll_offset = scroll_offset.saturating_sub(scroll_amount);
-                    }
+
+                    rooms_per_page = ((screen_height as f32 / layout::BUTTON_HEIGHT) - layout::BUTTON_HEIGHT)as usize;
 
                     if !(!cfg_val!(atomget AUTO_FETCH) && !rooms_fetched_once) && !rooms_fetching {
                         rooms_fetched_once = true;
@@ -291,6 +285,12 @@ async fn main() -> Result<(), Error> {
                         room_list_x += layout::FONT_SIZE;
                         room_list_x -= layout::SPACING as i32 * 3;
                         room_list_y -= (layout::BUTTON_HEIGHT as i32 * rooms_per_page as i32) / 2;
+
+                        if wheel < 0.0 {
+                            scroll_offset = (scroll_offset + scroll_amount).min(rooms_list.len() - rooms_per_page);
+                        } else if wheel > 0.0 {
+                            scroll_offset = scroll_offset.saturating_sub(scroll_amount);
+                        }
 
                         let visible_rooms = rooms_list
                             .iter_mut()
@@ -361,7 +361,6 @@ async fn main() -> Result<(), Error> {
             &d;
         }
         if errors.len() > 0 {
-            d.gui_unlock();
             for i in (0..errors.len()).rev() {
                 let er_box = &mut errors[i];
                 let idx = i as i32;
@@ -374,7 +373,7 @@ async fn main() -> Result<(), Error> {
                 );
                 error_rect.y += layout::BUTTON_HEIGHT;
 
-                let result = d.gui_button(error_rect, &er_box.error);
+                let result = d.gui_button(error_rect, &er_box.text);
                 
                 if result { 
                     errors.remove(i);
