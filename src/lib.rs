@@ -133,6 +133,24 @@ pub mod cfg {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub enum ProgramState {
+    Menu = 0,
+    Joining = 1,
+    InGame = 2,
+}
+
+impl From<usize> for ProgramState {
+    fn from(value: usize) -> Self {
+        match value {
+            0 => Self::Menu,
+            1 => Self::Joining,
+            2 => Self::InGame,
+            _ => Self::Menu
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum Screens {
     ServerList = 0,
     Configuration = 1,
@@ -143,7 +161,7 @@ impl From<usize> for Screens {
     fn from(value: usize) -> Self {
         match value {
             0 => Self::ServerList,
-            1 => Screens::Configuration,
+            1 => Self::Configuration,
             _ => Self::ServerList
         }
     }

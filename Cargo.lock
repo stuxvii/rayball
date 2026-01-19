@@ -1873,6 +1873,7 @@ dependencies = [
  "chrono",
  "clipboard-rs",
  "deflate",
+ "futures",
  "haversine",
  "minreq",
  "raylib",
