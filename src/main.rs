@@ -11,12 +11,17 @@ use rayball_rs::*;
 use raylib::error::Error;
 use raylib::prelude::*;
 use std::collections::HashMap;
-use std::sync::mpsc;
-use std::{sync, thread, vec};
+use std::vec;
+use tokio::sync::mpsc;
+//use tokio_tungstenite::WebSocketStream;
 
-fn thread_fetch(tx: sync::mpsc::Sender<Result<Vec<Room>, String>>) {
-    thread::spawn(move || {
-        let data = rooms::fetch_rooms(FLAGS_SPRITESHEET.get().unwrap());
+fn thread_fetch(tx: mpsc::UnboundedSender<Result<Vec<Room>, String>>) {
+    tokio::spawn(async move {
+        let data = tokio::task::spawn_blocking(move || {
+            rooms::fetch_rooms(FLAGS_SPRITESHEET.get().unwrap())
+        })
+        .await
+        .unwrap_or(Err("Thread join failed".to_string()));
         let _ = tx.send(data);
     });
 }
@@ -31,7 +36,8 @@ fn get_gui_color(style_property: i32) -> Color {
 }
 
 #[allow(unused)]
-fn main() -> Result<(), Error> {
+#[tokio::main]
+async fn main() -> Result<(), Error> {
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install rustls crypto provider");
@@ -183,7 +189,7 @@ fn main() -> Result<(), Error> {
     let mut bg_scroll_speed: f32;
     bg_scroll_speed = 32.;
 
-    let (tx, mut rx) = mpsc::channel::<Result<Vec<Room>, String>>();
+    let (tx, mut rx) = mpsc::unbounded_channel::<Result<Vec<Room>, String>>();
 
     let mut time_timer: f32 = 0.;
     let mut time_txt: String = Local::now().format("%H:%M:%S").to_string();
@@ -192,6 +198,7 @@ fn main() -> Result<(), Error> {
     let aud: RaylibAudio = RaylibAudio::init_audio_device().unwrap();
     let mut program_state: ProgramState = ProgramState::Menu;
     let mut websocket_future = None;
+
     while !rl.window_should_close() {
         let mut d: RaylibDrawHandle<'_> = rl.begin_drawing(&rt);
         let fps: String = format!("{}", d.get_fps());
@@ -471,16 +478,12 @@ fn main() -> Result<(), Error> {
                 let er_box = &mut errors[i];
                 let idx = i as i32;
 
-                let mut error_rect = rrect(screen_width - 320, idx * 32, 320, 32);
+                let mut error_rect = rrect(screen_width - screen_width/2, idx * 32, screen_width/2, 32);
                 error_rect.y += layout::BUTTON_HEIGHT;
                 let mut result = d.gui_button(error_rect, &er_box.text);
 
                 if !result && er_box.fade {
-                    result = if Local::now().timestamp() > (er_box.creation + 5) {
-                        true
-                    } else {
-                        false
-                    };
+                    result = Local::now().timestamp() > (er_box.creation + 5);
                 }
 
                 if result {
