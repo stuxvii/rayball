@@ -2,10 +2,10 @@ Find out what to send to the WebSocket
 - Send username
   - Gotta add username box
 - Send country (Latitude, Longitude and ISO code)
+  - Gotta allow setting country
 - Send avatar
 - Send version (Idiot)
 - Send ICE servers
-  - Gotta allow setting country
 TODO: Figure out what En, Kn, state, and Rs are for.
 
 Find out what to do with the data received

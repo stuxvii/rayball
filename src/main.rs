@@ -1,5 +1,7 @@
 use chrono::prelude::*;
 use clipboard_rs::{Clipboard, ClipboardContext};
+use futures::AsyncWriteExt;
+use futures::io::sink;
 use futures::task::noop_waker_ref;
 use rayball_rs::cfg::config::*;
 use rayball_rs::cfg::{config, layout, style};
@@ -56,9 +58,10 @@ async fn main() -> Result<(), Error> {
         }
     }
 
+    let program_name = "RayBall";
     let (mut rl, rt) = raylib::init()
         .resizable()
-        .title("rayball")
+        .title(program_name)
         .size(640, 480)
         .build();
 
@@ -70,6 +73,8 @@ async fn main() -> Result<(), Error> {
         get_gui_color(rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BASE_COLOR_NORMAL));
     clr_val!(PRIMARY_COLOR) =
         get_gui_color(rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::TEXT_COLOR_NORMAL));
+    clr_val!(TERNARY_COLOR) =
+        get_gui_color(rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BORDER_COLOR_NORMAL));
 
     match load_spritesheets(&mut rl, &rt) {
         Ok(_) => {
@@ -165,6 +170,7 @@ async fn main() -> Result<(), Error> {
         SettingData::new("Center Text".to_string(), &CENTER_TEXT, None),
         SettingData::new("24H Clock".to_string(), &MILITARY_TIME, None),
         SettingData::new("Auto-fetch rooms".to_string(), &AUTO_FETCH, None),
+        SettingData::new("Ask for username".to_string(), &ASK_USERNAME, None),
     ];
 
     let mut errors: Vec<Alert> = vec![];
@@ -185,6 +191,7 @@ async fn main() -> Result<(), Error> {
         ("list", rl.measure_text(&"W".repeat(48), layout::FONT_SIZE)),
         ("clck", rl.measure_text(&"00:00:00", layout::FONT_SIZE)),
         ("erro", rl.measure_text(&"Error!", layout::FONT_SIZE)),
+        ("usnm", rl.measure_text(&"W".repeat(25), layout::FONT_SIZE)),
     ]);
 
     let bpm = 164.;
@@ -199,7 +206,12 @@ async fn main() -> Result<(), Error> {
 
     let ctx = ClipboardContext::new().unwrap();
     let aud: RaylibAudio = RaylibAudio::init_audio_device().unwrap();
-    let mut program_state: ProgramState = ProgramState::Menu;
+    let mut program_state: ProgramState = 
+    if cfg_val!(atomget ASK_USERNAME) {
+        ProgramState::AskInfo
+    } else {
+        ProgramState::Menu
+    };
     let mut websocket_future = None;
 
     while !rl.window_should_close() {
@@ -220,9 +232,12 @@ async fn main() -> Result<(), Error> {
             Vector2::zero(),
             Color::WHITE,
         );
+
         if cfg_val!(atomget SCROLLING_BACKGROUND) {
             bg_scroll = (bg_scroll - bg_scroll_speed * dt) % checkerboard_bg.width as f32;
         }
+
+        time_timer += dt;
 
         match program_state {
             ProgramState::Menu => {
@@ -233,16 +248,6 @@ async fn main() -> Result<(), Error> {
                     layout::BUTTON_HEIGHT as i32,
                     clr_val!(SECONDARY_COLOR),
                 );
-
-                time_timer += dt;
-                if time_timer > 0.5 {
-                    let mut fmt = "%I:%M:%S";
-                    if cfg_val!(atomget MILITARY_TIME) {
-                        fmt = "%H:%M:%S";
-                    }
-                    time_txt = Local::now().format(fmt).to_string();
-                    time_timer = 0.;
-                }
                 d.draw_text(
                     &time_txt,
                     (screen_width / 2) - (text_widths.get("clck").unwrap() / 2),
@@ -283,7 +288,7 @@ async fn main() -> Result<(), Error> {
                         d.draw_texture_rec(txt, btn.rect, txt_cntr, clr_val!(PRIMARY_COLOR));
                     }
                 }
-
+                
                 match current_screen {
                     Screens::ServerList => {
                         if d.is_key_down(KeyboardKey::KEY_LEFT_CONTROL)
@@ -449,7 +454,7 @@ async fn main() -> Result<(), Error> {
                                 }
                             }
                         }
-                    }
+                    },
                     _ => (),
                 }
             }
@@ -459,6 +464,8 @@ async fn main() -> Result<(), Error> {
                         Poll::Ready(fut) => {
                             let (wss, resp) = fut;
                             println!("{:?}{:#?}", wss, resp);
+                            let mut writer: futures::io::Sink = sink();
+                            writer.write(&[2]).await;
                             program_state = ProgramState::InGame;
                         }
                         Poll::Pending => {}
@@ -477,6 +484,38 @@ async fn main() -> Result<(), Error> {
                 let font_size: i32 = layout::FONT_SIZE;
                 let color: Color = clr_val!(PRIMARY_COLOR);
                 d.draw_text(text, x, y, font_size, color);
+            }
+            ProgramState::AskInfo => {
+                for (i, c) in program_name.chars().enumerate() {
+                    let spacing = 30.;
+                    let mut x = i as f32 * spacing;
+                    x += screen_width as f32 / 2.;
+                    x += spacing / 2.;
+                    x -= (program_name.len() as f32 / 2.) * spacing;
+                    let y = spacing + (d.get_time() as f32 * 4.0 + i as f32).sin() * 4.;
+
+                    for i in 0..16 {
+                        d.draw_text_pro(d.get_font_default(), &String::from(c), Vector2::new(x+i as f32, y+i as f32), Vector2::zero(), y-spacing, 40., 0., clr_val!(SECONDARY_COLOR));
+                    }
+                    d.draw_text_pro(d.get_font_default(), &String::from(c), Vector2::new(x, y), Vector2::zero(), y-spacing, 40., 0., clr_val!(PRIMARY_COLOR));
+
+                    let text = &String::from("Let's get it on!");
+                    let mut error_rect = rrect(
+                        (screen_width / 2) - 64,
+                        screen_height-48,
+                        128,
+                        32,
+                    );
+
+                    let mut result = d.gui_button(error_rect, text.as_str());
+                    if result {
+                        program_state = ProgramState::Menu;
+                    }
+                }
+                // let username_rec = rrect(screen_width/2-*text_widths.get("usnm").unwrap()/2, layout::BUTTON_HEIGHT,*text_widths.get("usnm").unwrap(), layout::BUTTON_HEIGHT);
+                // d.draw_rectangle_rec(username_rec, clr_val!(TERNARY_COLOR));
+                // d.draw_rectangle_lines_ex(username_rec, layout::SPACING, clr_val!(PRIMARY_COLOR));
+
             }
             _ => (),
         }
@@ -527,6 +566,15 @@ async fn main() -> Result<(), Error> {
                 layout::FONT_SIZE,
                 clr_val!(PRIMARY_COLOR),
             );
+        }
+
+        if time_timer > 1. {
+            let mut fmt = "%I:%M:%S";
+            if cfg_val!(atomget MILITARY_TIME) {
+                fmt = "%H:%M:%S";
+            }
+            time_txt = Local::now().format(fmt).to_string();
+            time_timer = 0.;
         }
     }
 

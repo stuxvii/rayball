@@ -35,13 +35,13 @@ macro_rules! cfg_val {
     };
 }
 
+fn atomset(a: &AtomicBool, y: bool) {
+    a.store(y, std::sync::atomic::Ordering::Relaxed);
+}
+
 #[macro_export]
 macro_rules! clr_val {
     ($field:ident) => { *style::$field.lock().unwrap() };
-}
-
-fn atomset(a: &AtomicBool, y: bool) {
-    a.store(y, std::sync::atomic::Ordering::Relaxed);
 }
 
 pub fn save_config() {
@@ -54,7 +54,9 @@ pub fn save_config() {
     map.insert("show_fps".to_string(), Value::from(cfg_val!(atomget SHOW_FPS)));
     map.insert("military_time".to_string(), Value::from(cfg_val!(atomget MILITARY_TIME)));
     map.insert("auto_fetch".to_string(), Value::from(cfg_val!(atomget AUTO_FETCH)));
+    map.insert("ask_username".to_string(), Value::from(cfg_val!(atomget ASK_USERNAME)));
     
+    map.insert("username".to_string(), Value::from(cfg_val!(USERNAME).as_str()));
     map.insert("longitude".to_string(), Value::from(cfg_val!(LONGITUDE) as f64));
     map.insert("latitude".to_string(), Value::from(cfg_val!(LATITUDE) as f64));
     map.insert("fps".to_string(), Value::from(cfg_val!(FPS) as f64));
@@ -74,6 +76,10 @@ pub fn load_settings() -> Result<(), Box<dyn std::error::Error>> {
         map.get(key)?.as_bool()
     };
 
+    let get_str = |key: &str| -> Option<String> {
+        map.get(key)?.as_str().map(|s| s.to_owned())
+    };
+
     let get_num = |key: &str| -> Option<f64> {
         map.get(key)?.as_f64()
     };
@@ -84,7 +90,9 @@ pub fn load_settings() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(v) = get_bool("center_text")   {atomset(&CENTER_TEXT, v);}
     if let Some(v) = get_bool("show_fps")      {atomset(&SHOW_FPS, v);}
     if let Some(v) = get_bool("military_time") {atomset(&MILITARY_TIME, v);}
-    if let Some(v) = get_bool("auto_fetch") {atomset(&AUTO_FETCH, v);}
+    if let Some(v) = get_bool("auto_fetch")    {atomset(&AUTO_FETCH, v);}
+    if let Some(v) = get_bool("ask_username")  {atomset(&ASK_USERNAME, v);}
+    if let Some(v) = get_str("username")     {cfg_val!(USERNAME) = v; }
     if let Some(v) = get_num("longitude")       {cfg_val!(LONGITUDE) = v as f32; }
     if let Some(v) = get_num("latitude")        {cfg_val!(LATITUDE) = v as f32; }
     if let Some(v) = get_num("fps")             {cfg_val!(FPS) = v as u32; }
@@ -108,7 +116,7 @@ pub mod cfg {
 
     /// Settings that can be toggled by the user.
     pub mod config {
-        use std::sync::{Mutex, atomic::AtomicBool};
+        use std::sync::{LazyLock, Mutex, atomic::AtomicBool};
 
         pub static SHOW_FLAG_IMAGES: AtomicBool = AtomicBool::new(true);
         pub static FANCY_CURSOR: AtomicBool = AtomicBool::new(true);
@@ -117,9 +125,11 @@ pub mod cfg {
         pub static SHOW_FPS: AtomicBool = AtomicBool::new(false);
         pub static MILITARY_TIME: AtomicBool = AtomicBool::new(true);
         pub static AUTO_FETCH: AtomicBool = AtomicBool::new(true);
+        pub static ASK_USERNAME: AtomicBool = AtomicBool::new(true);
         pub static FPS: Mutex<u32> = Mutex::new(60);
         pub static LATITUDE: Mutex<f32> = Mutex::new(-12.0336);
         pub static LONGITUDE: Mutex<f32> = Mutex::new(-77.0215);
+        pub static USERNAME: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("im a rayball player!".to_string()));
     }
 
     pub mod style {
@@ -129,6 +139,7 @@ pub mod cfg {
         pub static ENABLED_COLOR:  LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("00AA00").expect("Invalid hex")));
         pub static PRIMARY_COLOR:  LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("f2ffee").expect("Invalid hex")));
         pub static SECONDARY_COLOR:LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("000000").expect("Invalid hex")));
+        pub static TERNARY_COLOR:  LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("BABABA").expect("Invalid hex")));
     }
 }
 
@@ -137,6 +148,7 @@ pub enum ProgramState {
     Menu = 0,
     Joining = 1,
     InGame = 2,
+    AskInfo = 3,
 }
 
 impl From<usize> for ProgramState {
@@ -145,6 +157,7 @@ impl From<usize> for ProgramState {
             0 => Self::Menu,
             1 => Self::Joining,
             2 => Self::InGame,
+            3 => Self::AskInfo,
             _ => Self::Menu
         }
     }
