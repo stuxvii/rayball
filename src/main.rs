@@ -1,6 +1,6 @@
 use chrono::prelude::*;
 use clipboard_rs::{Clipboard, ClipboardContext};
-use futures::future::FutureExt;
+use futures::task::noop_waker_ref;
 use rayball_rs::cfg::config::*;
 use rayball_rs::cfg::{config, layout, style};
 use rayball_rs::net::join::*;
@@ -11,6 +11,7 @@ use rayball_rs::*;
 use raylib::error::Error;
 use raylib::prelude::*;
 use std::collections::HashMap;
+use std::task::{Context, Poll};
 use std::vec;
 use tokio::sync::mpsc;
 //use tokio_tungstenite::WebSocketStream;
@@ -129,6 +130,8 @@ async fn main() -> Result<(), Error> {
         rect: Rectangle,
         screen: Screens,
     }
+    let waker = noop_waker_ref();
+    let mut cx = Context::from_waker(waker);
     let navbar_buttons: Vec<NavIcon> = vec![
         NavIcon {
             rect: rrect(0.0, 0.0, 11.0, 11.0),
@@ -289,7 +292,7 @@ async fn main() -> Result<(), Error> {
                             let clip: String = ctx.get_text().unwrap();
                             match parse_code(clip) {
                                 Ok(c) => {
-                                    websocket_future = Some(request_room_join(c));
+                                    websocket_future = Some(Box::pin(request_room_join(c)));
                                     program_state = ProgramState::Joining;
                                 }
                                 Err(e) => {
@@ -394,7 +397,8 @@ async fn main() -> Result<(), Error> {
                                     height: layout::BUTTON_HEIGHT,
                                 };
                                 if room.draw(&mut d, rect) {
-                                    websocket_future = Some(request_room_join(room.id.clone()));
+                                    websocket_future =
+                                        Some(Box::pin(request_room_join(room.id.clone())));
                                     program_state = 1.into();
                                 };
                             }
@@ -450,25 +454,29 @@ async fn main() -> Result<(), Error> {
                 }
             }
             ProgramState::Joining => {
-                match websocket_future.take() {
-                    Some(fut) => {
-                        if let Some((wss, resp)) = fut.now_or_never() {
-                            websocket_future = None;
+                if let Some(ref mut wssf) = websocket_future {
+                    match wssf.as_mut().poll(&mut cx) {
+                        Poll::Ready(fut) => {
+                            let (wss, resp) = fut;
+                            println!("{:?}{:#?}", wss, resp);
                             program_state = ProgramState::InGame;
-                        } else {
-                            let text = "Connecting to master...";
-                            let x: i32 = (screen_width / 2) - (d.measure_text( text,layout::FONT_SIZE) / 2);
-                            let y: i32 = layout::FONT_SIZE;
-                            let font_size: i32 = screen_height / 2;
-                            let color: Color = clr_val!(PRIMARY_COLOR);
-                            d.draw_text(text, x, y, font_size, color);
-                        };
-                    },
-                    None => {
-                        errors.push(Alert::new("A WebSocket Future was expected, but wasn't present".to_owned(), false));
-                        program_state = ProgramState::Menu;
+                        }
+                        Poll::Pending => {}
                     }
+                } else {
+                    errors.push(Alert::new(
+                        "A WebSocket Future was expected, but wasn't present".to_owned(),
+                        false,
+                    ));
+                    program_state = ProgramState::Menu;
                 };
+
+                let text = "Connecting to master...";
+                let x: i32 = (screen_width / 2) - (d.measure_text(text, layout::FONT_SIZE) / 2);
+                let y: i32 = screen_height / 2;
+                let font_size: i32 = layout::FONT_SIZE;
+                let color: Color = clr_val!(PRIMARY_COLOR);
+                d.draw_text(text, x, y, font_size, color);
             }
             _ => (),
         }
@@ -478,9 +486,24 @@ async fn main() -> Result<(), Error> {
                 let er_box = &mut errors[i];
                 let idx = i as i32;
 
-                let mut error_rect = rrect(screen_width - screen_width/2, idx * 32, screen_width/2, 32);
+                let text = if er_box.fade {
+                    format!(
+                        "error: {} | closes in {}",
+                        er_box.text,
+                        (er_box.creation + 5) - Local::now().timestamp()
+                    )
+                } else {
+                    format!("error: {} | click to close", er_box.text)
+                };
+
+                let mut error_rect = rrect(
+                    screen_width - d.measure_text(text.as_str(), layout::BUTTON_HEIGHT as i32),
+                    idx * 32,
+                    d.measure_text(text.as_str(), layout::BUTTON_HEIGHT as i32),
+                    32,
+                );
                 error_rect.y += layout::BUTTON_HEIGHT;
-                let mut result = d.gui_button(error_rect, &er_box.text);
+                let mut result = d.gui_button(error_rect, text.as_str());
 
                 if !result && er_box.fade {
                     result = Local::now().timestamp() > (er_box.creation + 5);
