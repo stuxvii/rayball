@@ -97,6 +97,8 @@ pub fn load_settings() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(v) = get_num("latitude")        {cfg_val!(LATITUDE) = v as f32; }
     if let Some(v) = get_num("fps")             {cfg_val!(FPS) = v as u32; }
 
+    cfg_val!(USERNAME).truncate(24);
+
     Ok(())
 }
 
@@ -127,8 +129,8 @@ pub mod cfg {
         pub static AUTO_FETCH: AtomicBool = AtomicBool::new(true);
         pub static ASK_USERNAME: AtomicBool = AtomicBool::new(true);
         pub static FPS: Mutex<u32> = Mutex::new(60);
-        pub static LATITUDE: Mutex<f32> = Mutex::new(-12.0336);
-        pub static LONGITUDE: Mutex<f32> = Mutex::new(-77.0215);
+        pub static LATITUDE: Mutex<f32> = Mutex::new(-32.5323);
+        pub static LONGITUDE: Mutex<f32> = Mutex::new(-68.5040);
         pub static USERNAME: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("im a rayball player!".to_string()));
     }
 

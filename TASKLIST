@@ -1,6 +1,5 @@
 Find out what to send to the WebSocket
 - Send username
-  - Gotta add username box
 - Send country (Latitude, Longitude and ISO code)
   - Gotta allow setting country
 - Send avatar

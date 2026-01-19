@@ -58,7 +58,7 @@ async fn main() -> Result<(), Error> {
         }
     }
 
-    let program_name = "RayBall";
+    let program_name = "RayBaLL";
     let (mut rl, rt) = raylib::init()
         .resizable()
         .title(program_name)
@@ -67,14 +67,15 @@ async fn main() -> Result<(), Error> {
 
     rl.gui_load_style("./style.rgs");
     rl.set_target_fps(cfg_val!(FPS));
-    rl.set_window_min_size(320, 360 / 2);
+    rl.set_window_min_size(640, 360);
 
     clr_val!(SECONDARY_COLOR) =
         get_gui_color(rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BASE_COLOR_NORMAL));
     clr_val!(PRIMARY_COLOR) =
         get_gui_color(rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::TEXT_COLOR_NORMAL));
-    clr_val!(TERNARY_COLOR) =
-        get_gui_color(rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BORDER_COLOR_NORMAL));
+    clr_val!(TERNARY_COLOR) = get_gui_color(
+        rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BORDER_COLOR_NORMAL),
+    );
 
     match load_spritesheets(&mut rl, &rt) {
         Ok(_) => {
@@ -206,8 +207,7 @@ async fn main() -> Result<(), Error> {
 
     let ctx = ClipboardContext::new().unwrap();
     let aud: RaylibAudio = RaylibAudio::init_audio_device().unwrap();
-    let mut program_state: ProgramState = 
-    if cfg_val!(atomget ASK_USERNAME) {
+    let mut program_state: ProgramState = if cfg_val!(atomget ASK_USERNAME) {
         ProgramState::AskInfo
     } else {
         ProgramState::Menu
@@ -288,7 +288,7 @@ async fn main() -> Result<(), Error> {
                         d.draw_texture_rec(txt, btn.rect, txt_cntr, clr_val!(PRIMARY_COLOR));
                     }
                 }
-                
+
                 match current_screen {
                     Screens::ServerList => {
                         if d.is_key_down(KeyboardKey::KEY_LEFT_CONTROL)
@@ -454,7 +454,7 @@ async fn main() -> Result<(), Error> {
                                 }
                             }
                         }
-                    },
+                    }
                     _ => (),
                 }
             }
@@ -487,35 +487,86 @@ async fn main() -> Result<(), Error> {
             }
             ProgramState::AskInfo => {
                 for (i, c) in program_name.chars().enumerate() {
-                    let spacing = 30.;
+                    let spacing = 25.;
                     let mut x = i as f32 * spacing;
                     x += screen_width as f32 / 2.;
                     x += spacing / 2.;
                     x -= (program_name.len() as f32 / 2.) * spacing;
                     let y = spacing + (d.get_time() as f32 * 4.0 + i as f32).sin() * 4.;
 
-                    for i in 0..16 {
-                        d.draw_text_pro(d.get_font_default(), &String::from(c), Vector2::new(x+i as f32, y+i as f32), Vector2::zero(), y-spacing, 40., 0., clr_val!(SECONDARY_COLOR));
+                    for i in 0..4 {
+                        d.draw_text_pro(
+                            d.get_font_default(),
+                            &String::from(c),
+                            Vector2::new(x + i as f32, y + i as f32),
+                            Vector2::zero(),
+                            y - spacing,
+                            40.,
+                            0.,
+                            clr_val!(SECONDARY_COLOR),
+                        );
                     }
-                    d.draw_text_pro(d.get_font_default(), &String::from(c), Vector2::new(x, y), Vector2::zero(), y-spacing, 40., 0., clr_val!(PRIMARY_COLOR));
-
-                    let text = &String::from("Let's get it on!");
-                    let mut error_rect = rrect(
-                        (screen_width / 2) - 64,
-                        screen_height-48,
-                        128,
-                        32,
+                    d.draw_text_pro(
+                        d.get_font_default(),
+                        &String::from(c),
+                        Vector2::new(x, y),
+                        Vector2::zero(),
+                        y - spacing,
+                        40.,
+                        0.,
+                        clr_val!(PRIMARY_COLOR),
                     );
 
-                    let mut result = d.gui_button(error_rect, text.as_str());
-                    if result {
+                    let mut go_rect = rrect((screen_width / 2) - 64, screen_height - 48, 128, 32);
+
+                    let mut username_rec = rrect(
+                        screen_width / 2 - *text_widths.get("usnm").unwrap() / 2,
+                        0,
+                        *text_widths.get("usnm").unwrap(),
+                        layout::BUTTON_HEIGHT,
+                    );
+                    username_rec.y -= layout::BUTTON_HEIGHT * 2.;
+                    username_rec.y += go_rect.y;
+
+                    let mut username: std::sync::MutexGuard<'_, String> = config::USERNAME.lock().unwrap();
+                    let mut username_hover: bool = false;
+
+                    if username_rec.check_collision_point_rec(d.get_mouse_position()) {
+                        username_hover = true;
+                        if d.is_key_pressed(KeyboardKey::KEY_BACKSPACE) {
+                            username.pop();
+                        }
+                        while let Some(c) = d.get_char_pressed() {
+                            if username.chars().count() < 24 {
+                                username.push(c);
+                            }
+                        }
+                    }
+                    d.draw_rectangle_rec(username_rec, clr_val!(SECONDARY_COLOR));
+
+                    if username_hover {
+                        d.draw_rectangle_lines_ex(
+                            username_rec,
+                            layout::SPACING,
+                            clr_val!(TERNARY_COLOR),
+                        );
+                        d.draw_rectangle(username_rec.x as i32 + d.measure_text(&username, layout::FONT_SIZE) + 3, username_rec.y as i32 + 2, 6, layout::FONT_SIZE-1, clr_val!(TERNARY_COLOR));
+                    }
+
+                    username_rec.x += layout::SPACING * 2.;
+                    username_rec.y += layout::SPACING * 2.;
+                    d.draw_text(
+                        &username,
+                        username_rec.x as i32,
+                        username_rec.y as i32,
+                        layout::FONT_SIZE,
+                        clr_val!(PRIMARY_COLOR),
+                    );
+
+                    if d.gui_button(go_rect, "Let's get it on!") {
                         program_state = ProgramState::Menu;
                     }
                 }
-                // let username_rec = rrect(screen_width/2-*text_widths.get("usnm").unwrap()/2, layout::BUTTON_HEIGHT,*text_widths.get("usnm").unwrap(), layout::BUTTON_HEIGHT);
-                // d.draw_rectangle_rec(username_rec, clr_val!(TERNARY_COLOR));
-                // d.draw_rectangle_lines_ex(username_rec, layout::SPACING, clr_val!(PRIMARY_COLOR));
-
             }
             _ => (),
         }
