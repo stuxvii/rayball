@@ -2,7 +2,7 @@ use haversine::{Location, distance};
 use minreq::Response;
 use raylib::{prelude::*};
 
-use crate::{cfg::config, flags, ui::primitives::Room};
+use crate::{ui::flags, ui::primitives::Room};
 
 pub fn fetch_rooms(
     flag_texture: &Texture2D,

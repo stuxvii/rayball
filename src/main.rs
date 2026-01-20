@@ -1,45 +1,21 @@
 use chrono::prelude::*;
-use clipboard_rs::{Clipboard, ClipboardContext};
-use futures::AsyncWriteExt;
-use futures::io::sink;
+use clipboard_rs::ClipboardContext;
 use futures::task::noop_waker_ref;
 use rayball_rs::cfg::config::*;
-use rayball_rs::cfg::{config, layout, style};
-use rayball_rs::net::join::*;
-use rayball_rs::net::rooms;
+use rayball_rs::cfg::layout;
 use rayball_rs::ui::cursor::CursorTrail;
+use rayball_rs::ui::{joining, menu, title};
 use rayball_rs::ui::primitives::{Room, SettingData};
+use rayball_rs::ui::state::{AppState, NavIcon};
 use rayball_rs::*;
 use raylib::ease::Tween;
 use raylib::error::Error;
 use raylib::prelude::*;
 use std::collections::HashMap;
-use std::task::{Context, Poll};
+use std::task::Context;
 use std::vec;
 use tokio::sync::mpsc;
-//use tokio_tungstenite::WebSocketStream;
 
-fn thread_fetch(tx: mpsc::UnboundedSender<Result<Vec<Room>, String>>) {
-    tokio::spawn(async move {
-        let data = tokio::task::spawn_blocking(move || {
-            rooms::fetch_rooms(FLAGS_SPRITESHEET.get().unwrap())
-        })
-        .await
-        .unwrap_or(Err("Thread join failed".to_string()));
-        let _ = tx.send(data);
-    });
-}
-
-fn get_gui_color(style_property: i32) -> Color {
-    let r = ((style_property >> 24) & 0xFF) as u8;
-    let g = ((style_property >> 16) & 0xFF) as u8;
-    let b = ((style_property >> 8) & 0xFF) as u8;
-    let a = (style_property & 0xFF) as u8;
-
-    Color::new(r, g, b, a)
-}
-
-#[allow(unused)]
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     rustls::crypto::ring::default_provider()
@@ -86,143 +62,66 @@ async fn main() -> Result<(), Error> {
         }
     };
 
-    let image_size = 64;
-    let mut image = Image::gen_image_color(image_size, image_size, Color::RED);
-
-    let image_size_f: f32 = image_size as f32;
-
-    let bg_color1 = rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BASE_COLOR_NORMAL);
-    let bg_color2 = rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BORDER_COLOR_NORMAL);
-    image.draw_line_ex(
-        Vector2 {
-            x: image_size_f,
-            y: 0.,
-        },
-        Vector2 {
-            x: 0.,
-            y: image_size_f,
-        },
-        image_size / 2,
-        get_gui_color(bg_color2),
-    );
-    image.draw_line_ex(
-        Vector2 { x: 0., y: 0. },
-        Vector2 {
-            x: image_size_f,
-            y: image_size_f,
-        },
-        image_size,
-        get_gui_color(bg_color1),
-    );
-    image.draw_line_ex(
-        Vector2 { x: 0., y: 0. },
-        Vector2 {
-            x: image_size_f,
-            y: image_size_f,
-        },
-        (image_size_f / 2.2) as i32,
-        get_gui_color(bg_color2),
-    );
-
-    let checkerboard_bg: Texture2D = rl.load_texture_from_image(&rt, &image).unwrap();
+    let checkerboard_bg: Texture2D = generate_checkerboard(&mut rl, &rt);
 
     let mut trail: CursorTrail = CursorTrail::new();
     if cfg_val!(atomget FANCY_CURSOR) {
         rl.hide_cursor();
     }
 
-    let offline_rec = rrect(22, 0, 13, 11);
-    struct NavIcon {
-        rect: Rectangle,
-        screen: Screens,
-    }
     let waker = noop_waker_ref();
     let mut cx = Context::from_waker(waker);
-    let navbar_buttons: Vec<NavIcon> = vec![
-        NavIcon {
-            rect: rrect(0.0, 0.0, 11.0, 11.0),
-            screen: Screens::ServerList,
-        },
-        NavIcon {
-            rect: rrect(11.0, 0.0, 11.0, 11.0),
-            screen: Screens::Configuration,
-        },
-        NavIcon {
-            rect: rrect(44.0, 0.0, 11.0, 11.0),
-            screen: Screens::GithubLink,
-        },
-    ];
-
-    let mut setting_toggles: Vec<SettingData> = vec![
-        SettingData::new(
-            "Fancy Cursor".to_string(),
-            &FANCY_CURSOR,
-            Some(|on, d| {
-                if on {
-                    d.hide_cursor();
-                } else {
-                    d.show_cursor();
-                }
-            }),
-        ),
-        SettingData::new("Scrolling BG".to_string(), &SCROLLING_BACKGROUND, None),
-        SettingData::new("Show FPS".to_string(), &SHOW_FPS, None),
-        SettingData::new("24H Clock".to_string(), &MILITARY_TIME, None),
-        SettingData::new("Auto-fetch rooms".to_string(), &AUTO_FETCH, None),
-        SettingData::new("Skip title".to_string(), &SKIP_TITLE, None),
-    ];
 
     let mut errors: Vec<Alert> = vec![];
 
-    let mut rooms_fetch_error: String = "".to_string();
-    let mut rooms_list: Vec<Room> = vec![];
-    let mut rooms_fetching = false;
-    let mut rooms_fetched = false;
-    let mut rooms_fetched_once = false;
-    let mut in_game = false;
-    let mut scroll_offset: usize = 0;
-    let mut rooms_per_page: usize = 24;
-    let scroll_amount: usize = 3;
-
-    let mut current_screen: Screens = Screens::ServerList;
-    let mut amount_of_dots_in_loading_text: f32 = 0.;
-    let text_widths = HashMap::from([
-        ("list", rl.measure_text(&"W".repeat(48), layout::FONT_SIZE)),
-        ("clck", rl.measure_text(&"00:00:00", layout::FONT_SIZE)),
-        ("erro", rl.measure_text(&"Error!", layout::FONT_SIZE)),
-        ("usnm", rl.measure_text(&"W".repeat(25), layout::FONT_SIZE)),
-    ]);
-
-    let bpm = 164.;
     let mut bg_scroll: f32 = 0.0;
-    let mut bg_scroll_speed: f32;
+    let bg_scroll_speed: f32;
     bg_scroll_speed = 32.;
 
-    let (tx, mut rx) = mpsc::unbounded_channel::<Result<Vec<Room>, String>>();
+    let (tx, rx) = mpsc::unbounded_channel::<Result<Vec<Room>, String>>();
 
     let mut time_timer: f32 = 0.;
     let mut time_txt: String = Local::now().format("%H:%M:%S").to_string();
 
-    let ctx = ClipboardContext::new().unwrap();
-    let aud: RaylibAudio = RaylibAudio::init_audio_device().unwrap();
-    let mut program_state: ProgramState = if cfg_val!(atomget SKIP_TITLE) {
-        ProgramState::Menu
-    } else {
-        ProgramState::AskInfo
+    let mut state: AppState = AppState {
+        navbar_buttons: vec![
+            NavIcon { rect: rrect(0.0, 0.0, 11.0, 11.0), screen: Screens::ServerList },
+            NavIcon { rect: rrect(11.0, 0.0, 11.0, 11.0), screen: Screens::Configuration },
+            NavIcon { rect: rrect(44.0, 0.0, 11.0, 11.0), screen: Screens::GithubLink },
+        ],
+        setting_toggles: vec![
+            SettingData::new("Fancy Cursor".to_string(), &FANCY_CURSOR, Some(|on, d| { if on { d.hide_cursor(); } else { d.show_cursor(); } })),
+            SettingData::new("Scrolling BG".to_string(), &SCROLLING_BACKGROUND, None),
+            SettingData::new("Show FPS".to_string(), &SHOW_FPS, None),
+            SettingData::new("24H Clock".to_string(), &MILITARY_TIME, None),
+            SettingData::new("Auto-fetch rooms".to_string(), &AUTO_FETCH, None),
+            SettingData::new("Skip title".to_string(), &SKIP_TITLE, None),
+        ],
+        errors: vec![],
+        rooms_fetch_error: "".to_string(),
+        rooms_list: vec![],
+        rooms_fetching: false,
+        rooms_fetched: false,
+        rooms_fetched_once: false,
+        scroll_offset: 0,
+        rooms_per_page: 24,
+        scroll_amount: 3,
+        current_screen: Screens::ServerList,
+        amount_of_dots_in_loading_text: 0.,
+        text_widths: HashMap::from([
+            ("list", rl.measure_text(&"W".repeat(48), layout::FONT_SIZE)),
+            ("clck", rl.measure_text(&"00:00:00", layout::FONT_SIZE)),
+            ("erro", rl.measure_text(&"Error!", layout::FONT_SIZE)),
+            ("usnm", rl.measure_text(&"W".repeat(25), layout::FONT_SIZE)),
+        ]),
+        tx,
+        rx,
+        clipboard_ctx: ClipboardContext::new().unwrap(),
+        program_state: if cfg_val!(atomget SKIP_TITLE) { ProgramState::Menu } else { ProgramState::AskInfo },
+        websocket_future: None,
+        logo_letter_amp_timer: 0.,
+        logo_letter_amp_tween: Tween::new(ease::linear_in, 32., 4., 50.),
     };
-    let mut websocket_future = None;
-
-    let mut logo_letter_amp_timer: f32 = 0.;
-    let mut logo_letter_amp_tween = Tween::new(ease::linear_in, 32., 4., 50.);
-
-    let flag_coords = flags::get_vector_from_code(&cfg_val!(COUNTRY));
-
-    let flags_rec = Rectangle::new(
-        (FLAGS_SPRITESHEET.get().unwrap().width as f32) - flag_coords.x,
-        (FLAGS_SPRITESHEET.get().unwrap().height as f32) - flag_coords.y,
-        16.0,
-        11.0,
-    );
 
     while !rl.window_should_close() {
         let mut d: RaylibDrawHandle<'_> = rl.begin_drawing(&rt);
@@ -249,363 +148,19 @@ async fn main() -> Result<(), Error> {
 
         time_timer += dt;
 
-        match program_state {
+        match state.program_state {
             ProgramState::Menu => {
-                d.draw_rectangle(
-                    0,
-                    0,
-                    screen_width,
-                    layout::BUTTON_HEIGHT as i32,
-                    clr_val!(SECONDARY_COLOR),
-                );
-                d.draw_text(
-                    &time_txt,
-                    (screen_width / 2) - (text_widths.get("clck").unwrap() / 2),
-                    layout::SPACING as i32 * 2,
-                    layout::FONT_SIZE,
-                    clr_val!(PRIMARY_COLOR),
-                );
-
-                for (i, btn) in navbar_buttons.iter().enumerate() {
-                    let rect = rrect(
-                        i as f32 * layout::BUTTON_HEIGHT as f32,
-                        0,
-                        layout::BUTTON_HEIGHT,
-                        layout::BUTTON_HEIGHT,
-                    );
-                    if d.gui_button(rect, "") {
-                        match btn.screen {
-                            Screens::GithubLink => {
-                                open_url("https://github.com/stuxvii/rayball");
-                            }
-                            _ => current_screen = btn.screen,
-                        }
-                    }
-                    if let Some(txt) = ICONS_SPRITESHEET.get() {
-                        let mut txt_cntr = Vector2 {
-                            x: rect.x,
-                            y: rect.y,
-                        };
-                        let negative = Vector2 {
-                            x: rect.width - btn.rect.width,
-                            y: rect.height - btn.rect.height,
-                        };
-                        txt_cntr.x -= negative.x;
-                        txt_cntr.y -= negative.y;
-                        txt_cntr.x += negative.x * 1.5;
-                        txt_cntr.y += negative.y * 1.5;
-
-                        d.draw_texture_rec(txt, btn.rect, txt_cntr, clr_val!(PRIMARY_COLOR));
-                    }
-                }
-
-                let mut flag_position = Vector2::new(screen_width as f32-flags_rec.width-layout::SPACING, layout::SPACING);
-                flag_position.x -= d.measure_text(&cfg_val!(USERNAME), layout::FONT_SIZE) as f32;
-                d.draw_text(&cfg_val!(USERNAME), flag_position.x as i32 + flags_rec.width as i32, flag_position.y as i32 + layout::SPACING as i32, layout::FONT_SIZE, clr_val!(PRIMARY_COLOR));
-                flag_position.x -= layout::SPACING;
-                if let Some(tex) = FLAGS_SPRITESHEET.get() {
-                    d.draw_texture_rec(tex, flags_rec, flag_position, raylib::color::Color::WHITE);
-                }
-
-                match current_screen {
-                    Screens::ServerList => {
-                        if d.is_key_down(KeyboardKey::KEY_LEFT_CONTROL)
-                            && d.is_key_pressed(KeyboardKey::KEY_V)
-                        {
-                            let clip: String = ctx.get_text().unwrap();
-                            match parse_code(clip) {
-                                Ok(c) => {
-                                    websocket_future = Some(Box::pin(request_room_join(c)));
-                                    program_state = ProgramState::Joining;
-                                }
-                                Err(e) => {
-                                    errors.push(Alert::new(e.to_string(), true));
-                                }
-                            }
-                        }
-
-                        let wheel = d.get_mouse_wheel_move();
-
-                        rooms_per_page = ((screen_height as f32 / layout::BUTTON_HEIGHT)
-                            - layout::BUTTON_HEIGHT)
-                            as usize;
-
-                        if !(!cfg_val!(atomget AUTO_FETCH) && !rooms_fetched_once)
-                            && !rooms_fetching
-                        {
-                            rooms_fetched_once = true;
-                            thread_fetch(tx.clone());
-                            rooms_fetching = true
-                        }
-
-                        if let Ok(data) = rx.try_recv() {
-                            match data {
-                                Ok(v) => {
-                                    rooms_list = v;
-                                    rooms_fetch_error = String::new();
-                                }
-                                Err(e) => {
-                                    rooms_list = vec![];
-                                    rooms_fetch_error = e;
-                                }
-                            };
-                            rooms_fetched = true;
-                            amount_of_dots_in_loading_text = 0.;
-                        }
-
-                        if rooms_list.len() == 0 && rooms_fetched {
-                            let mut txt_x = screen_width / 2;
-                            let txt_y = screen_height / 2;
-                            txt_x -= d.measure_text(&rooms_fetch_error, layout::FONT_SIZE) / 2;
-                            d.draw_text(
-                                &rooms_fetch_error,
-                                txt_x,
-                                txt_y,
-                                layout::FONT_SIZE,
-                                clr_val!(PRIMARY_COLOR),
-                            );
-                            if let Some(txt) = ICONS_SPRITESHEET.get() {
-                                d.draw_texture_rec(
-                                    txt,
-                                    offline_rec,
-                                    Vector2 {
-                                        x: 0. + layout::SPACING,
-                                        y: screen_height as f32
-                                            - offline_rec.height
-                                            - layout::SPACING,
-                                    },
-                                    raylib::color::Color::WHITE,
-                                );
-                            }
-                        }
-
-                        if !rooms_fetching && d.is_key_pressed(KeyboardKey::KEY_R) {
-                            rooms_list = vec![];
-                            rooms_fetching = false;
-                            rooms_fetched = false;
-                            rooms_fetched_once = true;
-                        }
-
-                        if rooms_fetched {
-                            let mut room_list_x = screen_width / 2;
-                            let mut room_list_y = screen_height / 2;
-                            room_list_x -= text_widths.get("list").unwrap() / 2;
-                            room_list_x -= layout::FLAG_SIZE.x as i32;
-                            room_list_x -= layout::DISTANCE_WIDTH;
-                            room_list_x += layout::FONT_SIZE;
-                            room_list_x += 6;
-                            room_list_x -= layout::SPACING as i32 * 3;
-                            room_list_y -=
-                                (layout::BUTTON_HEIGHT as i32 * rooms_per_page as i32) / 2;
-
-                            if wheel < 0.0 {
-                                scroll_offset = (scroll_offset + scroll_amount)
-                                    .min(rooms_list.len() - rooms_per_page);
-                            } else if wheel > 0.0 {
-                                scroll_offset = scroll_offset.saturating_sub(scroll_amount);
-                            }
-
-                            let visible_rooms = rooms_list
-                                .iter_mut()
-                                .enumerate()
-                                .skip(scroll_offset)
-                                .take(rooms_per_page);
-
-                            for (display_index, (_, room)) in visible_rooms.enumerate() {
-                                let y = display_index as f32
-                                    * (layout::BUTTON_HEIGHT + layout::SPACING);
-                                let rect = Rectangle {
-                                    x: room_list_x as f32,
-                                    y: room_list_y as f32 + y,
-                                    width: *text_widths.get("list").unwrap() as f32,
-                                    height: layout::BUTTON_HEIGHT,
-                                };
-                                if room.draw(&mut d, rect) {
-                                    websocket_future =
-                                        Some(Box::pin(request_room_join(room.id.clone())));
-                                    program_state = 1.into();
-                                };
-                            }
-
-                            if d.is_key_pressed(KeyboardKey::KEY_R) {
-                                rooms_list = vec![];
-                                rooms_fetching = false;
-                                rooms_fetched = false;
-                            }
-                        } else if rooms_fetched_once {
-                            amount_of_dots_in_loading_text += 10. * dt;
-                            let datextitself = format!(
-                                "Fetching rooms{}",
-                                ".".repeat(amount_of_dots_in_loading_text as usize)
-                            );
-                            let mut txt_x = screen_width / 2;
-                            let txt_y = screen_height / 2;
-                            txt_x -= d.measure_text(&datextitself, layout::FONT_SIZE) / 2;
-                            d.draw_text(
-                                &datextitself,
-                                txt_x,
-                                txt_y,
-                                layout::FONT_SIZE,
-                                clr_val!(PRIMARY_COLOR),
-                            );
-                        }
-                    }
-                    Screens::Configuration => {
-                        let setting_toggles_len = setting_toggles.len() as f32;
-                        for (display_index, btn) in setting_toggles.iter_mut().enumerate() {
-                            let mut rect = rrect(
-                                screen_width / 2,
-                                layout::BUTTON_HEIGHT * display_index as f32,
-                                layout::FONT_SIZE,
-                                layout::FONT_SIZE,
-                            );
-                            rect.y += (screen_height / 2) as f32;
-                            rect.y -= (layout::BUTTON_HEIGHT * setting_toggles_len) / 2.;
-                            rect.x -= 40.;
-
-                            let old_val = btn.target.load(std::sync::atomic::Ordering::Relaxed);
-                            let mut current_val: bool = old_val;
-                            if d.gui_check_box(rect, &btn.text, &mut current_val) {
-                                btn.target
-                                    .store(current_val, std::sync::atomic::Ordering::Relaxed);
-                                if let Some(act) = btn.callback {
-                                    act(current_val, &mut d);
-                                }
-                            }
-                        }
-                    }
-                    _ => (),
-                }
+                d.draw_rectangle(0, 0, screen_width, layout::BUTTON_HEIGHT as i32, clr_val!(SECONDARY_COLOR));
+                menu::draw_menu(&mut d, &mut state, screen_width, screen_height, dt);
             }
             ProgramState::Joining => {
-                if let Some(ref mut wssf) = websocket_future {
-                    match wssf.as_mut().poll(&mut cx) {
-                        Poll::Ready(fut) => {
-                            let (wss, resp) = fut;
-                            println!("{:?}{:#?}", wss, resp);
-                            let mut writer: futures::io::Sink = sink();
-                            writer.write(&[2]).await;
-                            program_state = ProgramState::InGame;
-                        }
-                        Poll::Pending => {}
-                    }
-                } else {
-                    errors.push(Alert::new(
-                        "A WebSocket Future was expected, but wasn't present".to_owned(),
-                        false,
-                    ));
-                    program_state = ProgramState::Menu;
-                };
-
-                let text = "Connecting to master...";
-                let x: i32 = (screen_width / 2) - (d.measure_text(text, layout::FONT_SIZE) / 2);
-                let y: i32 = screen_height / 2;
-                let font_size: i32 = layout::FONT_SIZE;
-                let color: Color = clr_val!(PRIMARY_COLOR);
-                d.draw_text(text, x, y, font_size, color);
+                joining::draw_joining(&mut d, &mut state, &mut cx, screen_width, screen_height);
             }
             ProgramState::AskInfo => {
-                let mut amplitude = 0.;
-                if logo_letter_amp_timer < logo_letter_amp_tween.duration() {
-                    logo_letter_amp_timer += dt;
-                    amplitude = logo_letter_amp_tween.apply(logo_letter_amp_timer);
-                } else {
-                    amplitude = 4.;
-                }
-                
-                for (i, c) in program_name.chars().enumerate() {
-                    let spacing = 25.;
-                    let mut x = i as f32 * spacing;
-                    x += screen_width as f32 / 2.;
-                    x += spacing / 2.;
-                    x -= (program_name.len() as f32 / 2.) * spacing;
-                    let y = spacing + (d.get_time() as f32 * 4.0 + i as f32).sin() * amplitude;
-
-                    for i in 0..4 {
-                        d.draw_text_pro(
-                            d.get_font_default(),
-                            &String::from(c),
-                            Vector2::new(x + i as f32, y + i as f32),
-                            Vector2::zero(),
-                            y - spacing,
-                            40.,
-                            0.,
-                            clr_val!(SECONDARY_COLOR),
-                        );
-                    }
-                    d.draw_text_pro(
-                        d.get_font_default(),
-                        &String::from(c),
-                        Vector2::new(x, y),
-                        Vector2::zero(),
-                        y - spacing,
-                        40.,
-                        0.,
-                        clr_val!(PRIMARY_COLOR),
-                    );
-
-                    let mut go_rect = rrect((screen_width / 2) - 64, screen_height - 48, 128, 32);
-
-                    let mut username_rec = rrect(
-                        screen_width / 2 - *text_widths.get("usnm").unwrap() / 2,
-                        0,
-                        *text_widths.get("usnm").unwrap(),
-                        layout::BUTTON_HEIGHT,
-                    );
-                    username_rec.y -= layout::BUTTON_HEIGHT * 2.;
-                    username_rec.y += go_rect.y;
-
-                    let mut username: std::sync::MutexGuard<'_, String> = config::USERNAME.lock().unwrap();
-                    let mut username_hover: bool = false;
-
-                    if username_rec.check_collision_point_rec(d.get_mouse_position()) {
-                        username_hover = true;
-                        if d.is_key_pressed(KeyboardKey::KEY_BACKSPACE) {
-                            username.pop();
-                        }
-                        while let Some(c) = d.get_char_pressed() {
-                            if username.chars().count() < 24 {
-                                username.push(c);
-                            }
-                        }
-                    }
-                    d.draw_rectangle_rec(username_rec, clr_val!(SECONDARY_COLOR));
-                    
-                    if username.is_empty() {
-                        d.draw_text(
-                            "enter your name.",
-                            username_rec.x as i32 + 2,
-                            username_rec.y as i32 + 2,
-                            layout::FONT_SIZE,
-                            clr_val!(TERNARY_COLOR),
-                        );
-                    }
-
-                    if username_hover {
-                        d.draw_rectangle_lines_ex(
-                            username_rec,
-                            layout::SPACING,
-                            clr_val!(TERNARY_COLOR),
-                        );
-                        d.draw_rectangle(username_rec.x as i32 + d.measure_text(&username, layout::FONT_SIZE) + 2, username_rec.y as i32 + 2, 4, layout::FONT_SIZE-1, clr_val!(PRIMARY_COLOR));
-                    }
-
-                    d.draw_text(
-                        &username,
-                        username_rec.x as i32 + 2,
-                        username_rec.y as i32 + 2,
-                        layout::FONT_SIZE,
-                        clr_val!(PRIMARY_COLOR),
-                    );
-
-                    if !username.is_empty() && (d.gui_button(go_rect, "Let's get it on!") || d.is_key_pressed(KeyboardKey::KEY_ENTER) ){
-                        program_state = ProgramState::Menu;
-                    }
-                }
+                title::draw_ask_info(&mut d, &mut state, program_name, screen_width, screen_height, dt);
             }
             _ => (),
         }
-
         if errors.len() > 0 {
             for i in (0..errors.len()).rev() {
                 let er_box = &mut errors[i];

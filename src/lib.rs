@@ -2,7 +2,7 @@ use chrono::Local;
 use raylib::prelude::*;
 use serde_json::Value;
 use std::{collections::{BTreeMap}, fs, sync::{OnceLock, atomic::AtomicBool}};
-use crate::cfg::config::{self, *};
+use crate::cfg::config::*;
 
 pub static ICONS_SPRITESHEET: OnceLock<Texture2D> = OnceLock::new();
 pub static FLAGS_SPRITESHEET: OnceLock<Texture2D> = OnceLock::new();
@@ -29,9 +29,9 @@ pub fn load_spritesheets(rl: &mut RaylibHandle, thread: &RaylibThread) -> Result
 
 #[macro_export]
 macro_rules! cfg_val {
-    ($field:ident) => { *config::$field.lock().unwrap() };
+    ($field:ident) => { *crate::cfg::config::$field.lock().unwrap() };
     (atomget $field:ident) => { 
-        config::$field.load(std::sync::atomic::Ordering::Relaxed) 
+        crate::cfg::config::$field.load(std::sync::atomic::Ordering::Relaxed) 
     };
 }
 
@@ -39,9 +39,61 @@ fn atomset(a: &AtomicBool, y: bool) {
     a.store(y, std::sync::atomic::Ordering::Relaxed);
 }
 
+pub fn get_gui_color(style_property: i32) -> Color {
+    let r = ((style_property >> 24) & 0xFF) as u8;
+    let g = ((style_property >> 16) & 0xFF) as u8;
+    let b = ((style_property >> 8) & 0xFF) as u8;
+    let a = (style_property & 0xFF) as u8;
+
+    Color::new(r, g, b, a)
+}
+
+pub fn generate_checkerboard(rl: &mut RaylibHandle, rt: &RaylibThread) -> Texture2D {
+    let image_size = 64;
+    let mut image = Image::gen_image_color(image_size, image_size, Color::RED);
+
+    let image_size_f: f32 = image_size as f32;
+
+    let bg_color1 = rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BASE_COLOR_NORMAL);
+    let bg_color2 = rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BORDER_COLOR_NORMAL);
+    
+    image.draw_line_ex(
+        Vector2 {
+            x: image_size_f,
+            y: 0.,
+        },
+        Vector2 {
+            x: 0.,
+            y: image_size_f,
+        },
+        image_size / 2,
+        get_gui_color(bg_color2),
+    );
+    image.draw_line_ex(
+        Vector2 { x: 0., y: 0. },
+        Vector2 {
+            x: image_size_f,
+            y: image_size_f,
+        },
+        image_size,
+        get_gui_color(bg_color1),
+    );
+    image.draw_line_ex(
+        Vector2 { x: 0., y: 0. },
+        Vector2 {
+            x: image_size_f,
+            y: image_size_f,
+        },
+        (image_size_f / 2.2) as i32,
+        get_gui_color(bg_color2),
+    );
+
+    rl.load_texture_from_image(rt, &image).unwrap()
+}
+
 #[macro_export]
 macro_rules! clr_val {
-    ($field:ident) => { *style::$field.lock().unwrap() };
+    ($field:ident) => { *crate::cfg::style::$field.lock().unwrap() };
 }
 
 pub fn save_config() {
@@ -88,7 +140,7 @@ pub fn load_settings() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(v) = get_bool("show_fps")      {atomset(&SHOW_FPS, v);}
     if let Some(v) = get_bool("military_time") {atomset(&MILITARY_TIME, v);}
     if let Some(v) = get_bool("auto_fetch")    {atomset(&AUTO_FETCH, v);}
-    if let Some(v) = get_bool("skip_title")  {atomset(&SKIP_TITLE, v);}
+    if let Some(v) = get_bool("skip_title")    {atomset(&SKIP_TITLE, v);}
     if let Some(v) = get_str("username")     {cfg_val!(USERNAME) = v; }
     if let Some(v) = get_str("country")      {cfg_val!(COUNTRY) = v; }
     if let Some(v) = get_num("longitude")       {cfg_val!(LONGITUDE) = v as f32; }
@@ -101,7 +153,6 @@ pub fn load_settings() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub mod flags;
 pub mod cfg {
     /// Layout constants.
     pub mod layout {
@@ -197,6 +248,11 @@ impl Alert {
 pub mod ui {
     pub mod cursor;
     pub mod primitives;
+    pub mod title;
+    pub mod state;
+    pub mod flags;
+    pub mod menu;
+    pub mod joining;
 }
 
 pub mod net {

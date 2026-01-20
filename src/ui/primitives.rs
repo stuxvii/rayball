@@ -8,7 +8,6 @@ use raylib::prelude::*;
 use crate::FLAGS_SPRITESHEET;
 use crate::ICONS_SPRITESHEET;
 use crate::cfg::layout;
-use crate::cfg::style;
 
 #[derive(Debug)]
 pub struct Room {

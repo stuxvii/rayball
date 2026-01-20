@@ -1,5 +1,4 @@
 use raylib::prelude::*;
-use crate::cfg::style;
 
 const MAX_TRAIL_LENGTH: usize = 10;
 const TRAIL_DECAY: f32 = 0.05;
