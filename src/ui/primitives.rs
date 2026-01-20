@@ -7,7 +7,6 @@ use raylib::prelude::*;
 
 use crate::FLAGS_SPRITESHEET;
 use crate::ICONS_SPRITESHEET;
-use crate::cfg::config;
 use crate::cfg::layout;
 use crate::cfg::style;
 
@@ -53,12 +52,7 @@ impl Room {
     pub fn draw(&mut self, d: &mut RaylibDrawHandle, rect: Rectangle) -> bool {
         let clicked = d.gui_button(rect, "");
 
-        let mut txt_x: f32 = rect.x + layout::SPACING;
-        
-        if cfg_val!(atomget CENTER_TEXT) {
-            txt_x = rect.x + rect.width / 2.;
-            txt_x -= (d.measure_text(&self.text, layout::FONT_SIZE) / 2) as f32;
-        }
+        let txt_x: f32 = rect.x + layout::SPACING;
 
         d.draw_text(
             &self.text, 
@@ -81,29 +75,19 @@ impl Room {
         );
 
         let flag_bg_rect = rrect(
-            player_count_rec.x + player_count_rec.width + layout::SPACING,
+            player_count_rec.x + player_count_rec.width + layout::SPACING + layout::SPACING,
             rect.y,
             layout::FLAG_SIZE.y + layout::DISTANCE_WIDTH as f32,
             rect.height,
         );
         d.draw_rectangle_rec(flag_bg_rect, clr_val!(SECONDARY_COLOR));
 
-        if cfg_val!(atomget SHOW_FLAG_IMAGES) {
-            let position = Vector2 {
-                x: flag_bg_rect.x + layout::SPACING,
-                y: rect.y + layout::SPACING,
-            };
-            if let Some(tex) = FLAGS_SPRITESHEET.get() {
-                d.draw_texture_rec(tex, self.map_rec, position, raylib::color::Color::WHITE);
-            }
-        } else {
-            d.draw_text(
-                &self.country,
-                (flag_bg_rect.x + layout::SPACING) as i32,
-                (rect.y + layout::SPACING) as i32,
-                layout::FONT_SIZE,
-                clr_val!(PRIMARY_COLOR),
-            );
+        let position = Vector2 {
+            x: flag_bg_rect.x + layout::SPACING,
+            y: rect.y + layout::SPACING,
+        };
+        if let Some(tex) = FLAGS_SPRITESHEET.get() {
+            d.draw_texture_rec(tex, self.map_rec, position, raylib::color::Color::WHITE);
         }
 
         d.draw_text(
@@ -115,7 +99,7 @@ impl Room {
         );
 
         let lock_bg_rect = rrect(
-            rect.x + rect.width + layout::SPACING * 3.0 + layout::PLAYER_COUNT_WIDTH as f32 + flag_bg_rect.width,
+            rect.x + rect.width + layout::SPACING * 4.0 + layout::PLAYER_COUNT_WIDTH as f32 + flag_bg_rect.width,
             rect.y,
             layout::FONT_SIZE as f32 + layout::SPACING,
             rect.height,

@@ -10,6 +10,7 @@ use rayball_rs::net::rooms;
 use rayball_rs::ui::cursor::CursorTrail;
 use rayball_rs::ui::primitives::{Room, SettingData};
 use rayball_rs::*;
+use raylib::ease::Tween;
 use raylib::error::Error;
 use raylib::prelude::*;
 use std::collections::HashMap;
@@ -67,14 +68,13 @@ async fn main() -> Result<(), Error> {
 
     rl.gui_load_style("./style.rgs");
     rl.set_target_fps(cfg_val!(FPS));
-    rl.set_window_min_size(640, 360);
+    rl.set_window_min_size(490, 360);
 
     clr_val!(SECONDARY_COLOR) =
         get_gui_color(rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BASE_COLOR_NORMAL));
     clr_val!(PRIMARY_COLOR) =
         get_gui_color(rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::TEXT_COLOR_NORMAL));
-    clr_val!(TERNARY_COLOR) = get_gui_color(
-        rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BORDER_COLOR_NORMAL),
+    clr_val!(TERNARY_COLOR) = get_gui_color(rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BORDER_COLOR_NORMAL),
     );
 
     match load_spritesheets(&mut rl, &rt) {
@@ -154,7 +154,6 @@ async fn main() -> Result<(), Error> {
     ];
 
     let mut setting_toggles: Vec<SettingData> = vec![
-        SettingData::new("Show Flags".to_string(), &SHOW_FLAG_IMAGES, None),
         SettingData::new(
             "Fancy Cursor".to_string(),
             &FANCY_CURSOR,
@@ -168,10 +167,9 @@ async fn main() -> Result<(), Error> {
         ),
         SettingData::new("Scrolling BG".to_string(), &SCROLLING_BACKGROUND, None),
         SettingData::new("Show FPS".to_string(), &SHOW_FPS, None),
-        SettingData::new("Center Text".to_string(), &CENTER_TEXT, None),
         SettingData::new("24H Clock".to_string(), &MILITARY_TIME, None),
         SettingData::new("Auto-fetch rooms".to_string(), &AUTO_FETCH, None),
-        SettingData::new("Ask for username".to_string(), &ASK_USERNAME, None),
+        SettingData::new("Skip title".to_string(), &SKIP_TITLE, None),
     ];
 
     let mut errors: Vec<Alert> = vec![];
@@ -207,12 +205,24 @@ async fn main() -> Result<(), Error> {
 
     let ctx = ClipboardContext::new().unwrap();
     let aud: RaylibAudio = RaylibAudio::init_audio_device().unwrap();
-    let mut program_state: ProgramState = if cfg_val!(atomget ASK_USERNAME) {
-        ProgramState::AskInfo
-    } else {
+    let mut program_state: ProgramState = if cfg_val!(atomget SKIP_TITLE) {
         ProgramState::Menu
+    } else {
+        ProgramState::AskInfo
     };
     let mut websocket_future = None;
+
+    let mut logo_letter_amp_timer: f32 = 0.;
+    let mut logo_letter_amp_tween = Tween::new(ease::linear_in, 32., 4., 50.);
+
+    let flag_coords = flags::get_vector_from_code(&cfg_val!(COUNTRY));
+
+    let flags_rec = Rectangle::new(
+        (FLAGS_SPRITESHEET.get().unwrap().width as f32) - flag_coords.x,
+        (FLAGS_SPRITESHEET.get().unwrap().height as f32) - flag_coords.y,
+        16.0,
+        11.0,
+    );
 
     while !rl.window_should_close() {
         let mut d: RaylibDrawHandle<'_> = rl.begin_drawing(&rt);
@@ -287,6 +297,14 @@ async fn main() -> Result<(), Error> {
 
                         d.draw_texture_rec(txt, btn.rect, txt_cntr, clr_val!(PRIMARY_COLOR));
                     }
+                }
+
+                let mut flag_position = Vector2::new(screen_width as f32-flags_rec.width-layout::SPACING, layout::SPACING);
+                flag_position.x -= d.measure_text(&cfg_val!(USERNAME), layout::FONT_SIZE) as f32;
+                d.draw_text(&cfg_val!(USERNAME), flag_position.x as i32 + flags_rec.width as i32, flag_position.y as i32 + layout::SPACING as i32, layout::FONT_SIZE, clr_val!(PRIMARY_COLOR));
+                flag_position.x -= layout::SPACING;
+                if let Some(tex) = FLAGS_SPRITESHEET.get() {
+                    d.draw_texture_rec(tex, flags_rec, flag_position, raylib::color::Color::WHITE);
                 }
 
                 match current_screen {
@@ -375,6 +393,7 @@ async fn main() -> Result<(), Error> {
                             room_list_x -= layout::FLAG_SIZE.x as i32;
                             room_list_x -= layout::DISTANCE_WIDTH;
                             room_list_x += layout::FONT_SIZE;
+                            room_list_x += 6;
                             room_list_x -= layout::SPACING as i32 * 3;
                             room_list_y -=
                                 (layout::BUTTON_HEIGHT as i32 * rooms_per_page as i32) / 2;
@@ -486,13 +505,21 @@ async fn main() -> Result<(), Error> {
                 d.draw_text(text, x, y, font_size, color);
             }
             ProgramState::AskInfo => {
+                let mut amplitude = 0.;
+                if logo_letter_amp_timer < logo_letter_amp_tween.duration() {
+                    logo_letter_amp_timer += dt;
+                    amplitude = logo_letter_amp_tween.apply(logo_letter_amp_timer);
+                } else {
+                    amplitude = 4.;
+                }
+                
                 for (i, c) in program_name.chars().enumerate() {
                     let spacing = 25.;
                     let mut x = i as f32 * spacing;
                     x += screen_width as f32 / 2.;
                     x += spacing / 2.;
                     x -= (program_name.len() as f32 / 2.) * spacing;
-                    let y = spacing + (d.get_time() as f32 * 4.0 + i as f32).sin() * 4.;
+                    let y = spacing + (d.get_time() as f32 * 4.0 + i as f32).sin() * amplitude;
 
                     for i in 0..4 {
                         d.draw_text_pro(
@@ -543,6 +570,16 @@ async fn main() -> Result<(), Error> {
                         }
                     }
                     d.draw_rectangle_rec(username_rec, clr_val!(SECONDARY_COLOR));
+                    
+                    if username.is_empty() {
+                        d.draw_text(
+                            "enter your name.",
+                            username_rec.x as i32 + 2,
+                            username_rec.y as i32 + 2,
+                            layout::FONT_SIZE,
+                            clr_val!(TERNARY_COLOR),
+                        );
+                    }
 
                     if username_hover {
                         d.draw_rectangle_lines_ex(
@@ -550,20 +587,18 @@ async fn main() -> Result<(), Error> {
                             layout::SPACING,
                             clr_val!(TERNARY_COLOR),
                         );
-                        d.draw_rectangle(username_rec.x as i32 + d.measure_text(&username, layout::FONT_SIZE) + 3, username_rec.y as i32 + 2, 6, layout::FONT_SIZE-1, clr_val!(TERNARY_COLOR));
+                        d.draw_rectangle(username_rec.x as i32 + d.measure_text(&username, layout::FONT_SIZE) + 2, username_rec.y as i32 + 2, 4, layout::FONT_SIZE-1, clr_val!(PRIMARY_COLOR));
                     }
 
-                    username_rec.x += layout::SPACING * 2.;
-                    username_rec.y += layout::SPACING * 2.;
                     d.draw_text(
                         &username,
-                        username_rec.x as i32,
-                        username_rec.y as i32,
+                        username_rec.x as i32 + 2,
+                        username_rec.y as i32 + 2,
                         layout::FONT_SIZE,
                         clr_val!(PRIMARY_COLOR),
                     );
 
-                    if d.gui_button(go_rect, "Let's get it on!") {
+                    if !username.is_empty() && (d.gui_button(go_rect, "Let's get it on!") || d.is_key_pressed(KeyboardKey::KEY_ENTER) ){
                         program_state = ProgramState::Menu;
                     }
                 }

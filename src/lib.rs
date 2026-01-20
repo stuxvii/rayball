@@ -48,15 +48,14 @@ pub fn save_config() {
     let mut map = BTreeMap::new();
 
     map.insert("scrolling_bg".to_string(), Value::from(cfg_val!(atomget SCROLLING_BACKGROUND)));
-    map.insert("show_flags".to_string(), Value::from(cfg_val!(atomget SHOW_FLAG_IMAGES)));
     map.insert("fancy_cursor".to_string(), Value::from(cfg_val!(atomget FANCY_CURSOR)));
-    map.insert("center_text".to_string(), Value::from(cfg_val!(atomget CENTER_TEXT)));
     map.insert("show_fps".to_string(), Value::from(cfg_val!(atomget SHOW_FPS)));
     map.insert("military_time".to_string(), Value::from(cfg_val!(atomget MILITARY_TIME)));
     map.insert("auto_fetch".to_string(), Value::from(cfg_val!(atomget AUTO_FETCH)));
-    map.insert("ask_username".to_string(), Value::from(cfg_val!(atomget ASK_USERNAME)));
+    map.insert("skip_title".to_string(), Value::from(cfg_val!(atomget SKIP_TITLE)));
     
     map.insert("username".to_string(), Value::from(cfg_val!(USERNAME).as_str()));
+    map.insert("country".to_string(), Value::from(cfg_val!(COUNTRY).as_str()));
     map.insert("longitude".to_string(), Value::from(cfg_val!(LONGITUDE) as f64));
     map.insert("latitude".to_string(), Value::from(cfg_val!(LATITUDE) as f64));
     map.insert("fps".to_string(), Value::from(cfg_val!(FPS) as f64));
@@ -85,19 +84,19 @@ pub fn load_settings() -> Result<(), Box<dyn std::error::Error>> {
     };
     
     if let Some(v) = get_bool("scrolling_bg")  {atomset(&SCROLLING_BACKGROUND, v);}
-    if let Some(v) = get_bool("show_flags")    {atomset(&SHOW_FLAG_IMAGES, v);}
     if let Some(v) = get_bool("fancy_cursor")  {atomset(&FANCY_CURSOR, v);}
-    if let Some(v) = get_bool("center_text")   {atomset(&CENTER_TEXT, v);}
     if let Some(v) = get_bool("show_fps")      {atomset(&SHOW_FPS, v);}
     if let Some(v) = get_bool("military_time") {atomset(&MILITARY_TIME, v);}
     if let Some(v) = get_bool("auto_fetch")    {atomset(&AUTO_FETCH, v);}
-    if let Some(v) = get_bool("ask_username")  {atomset(&ASK_USERNAME, v);}
+    if let Some(v) = get_bool("skip_title")  {atomset(&SKIP_TITLE, v);}
     if let Some(v) = get_str("username")     {cfg_val!(USERNAME) = v; }
+    if let Some(v) = get_str("country")      {cfg_val!(COUNTRY) = v; }
     if let Some(v) = get_num("longitude")       {cfg_val!(LONGITUDE) = v as f32; }
     if let Some(v) = get_num("latitude")        {cfg_val!(LATITUDE) = v as f32; }
     if let Some(v) = get_num("fps")             {cfg_val!(FPS) = v as u32; }
 
     cfg_val!(USERNAME).truncate(24);
+    cfg_val!(COUNTRY).truncate(2);
 
     Ok(())
 }
@@ -120,18 +119,17 @@ pub mod cfg {
     pub mod config {
         use std::sync::{LazyLock, Mutex, atomic::AtomicBool};
 
-        pub static SHOW_FLAG_IMAGES: AtomicBool = AtomicBool::new(true);
         pub static FANCY_CURSOR: AtomicBool = AtomicBool::new(true);
         pub static SCROLLING_BACKGROUND: AtomicBool = AtomicBool::new(true);
-        pub static CENTER_TEXT: AtomicBool = AtomicBool::new(false);
         pub static SHOW_FPS: AtomicBool = AtomicBool::new(false);
         pub static MILITARY_TIME: AtomicBool = AtomicBool::new(true);
         pub static AUTO_FETCH: AtomicBool = AtomicBool::new(true);
-        pub static ASK_USERNAME: AtomicBool = AtomicBool::new(true);
+        pub static SKIP_TITLE: AtomicBool = AtomicBool::new(false);
         pub static FPS: Mutex<u32> = Mutex::new(60);
         pub static LATITUDE: Mutex<f32> = Mutex::new(-32.5323);
         pub static LONGITUDE: Mutex<f32> = Mutex::new(-68.5040);
-        pub static USERNAME: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("im a rayball player!".to_string()));
+        pub static USERNAME: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("".to_string()));
+        pub static COUNTRY: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("ar".to_string()));
     }
 
     pub mod style {
