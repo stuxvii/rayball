@@ -259,4 +259,5 @@ pub mod net {
     pub mod rooms;
     pub mod join;
     pub mod idkey;
+    pub mod xcoder;
 }

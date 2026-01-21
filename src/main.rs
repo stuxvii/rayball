@@ -3,6 +3,7 @@ use clipboard_rs::ClipboardContext;
 use futures::task::noop_waker_ref;
 use rayball_rs::cfg::config::*;
 use rayball_rs::cfg::layout;
+use rayball_rs::net::xcoder::Encoder;
 use rayball_rs::ui::cursor::CursorTrail;
 use rayball_rs::ui::{joining, menu, title};
 use rayball_rs::ui::primitives::{Room, SettingData};
@@ -117,6 +118,7 @@ async fn main() -> Result<(), Error> {
         clipboard_ctx: ClipboardContext::new().unwrap(),
         program_state: if cfg_val!(atomget SKIP_TITLE) { ProgramState::Menu } else { ProgramState::AskInfo },
         websocket_future: None,
+        state: Encoder::new(None, None),
         logo_letter_amp_timer: 0.,
         logo_letter_amp_tween: Tween::new(ease::circ_out, 32., 4., 200.),
     };

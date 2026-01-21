@@ -1,23 +1,35 @@
-use raylib::prelude::*;
-use futures::AsyncWriteExt;
-use futures::io::sink;
+use crate::ui::state::AppState;
+use crate::net::xcoder::Encoder;
 use crate::cfg::layout;
 use crate::*;
+use futures::SinkExt;
+use tokio_tungstenite::{tungstenite::Message, *};
 use std::task::{Context, Poll};
-use crate::ui::state::AppState;
+
+async fn send_data_to_ws(fut: (WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, tokio_tungstenite::tungstenite::http::Response<Option<Vec<u8>>>))  -> Result<Message, tokio_tungstenite::tungstenite::Error> {
+    let (mut write, read) = fut;
+    let mut plr_state: Encoder = Encoder::new(None, None);
+    plr_state.write_str_len_leb128(&cfg_val!(USERNAME));
+    write.send(Message::binary(plr_state.as_slice())).await?;
+    if let Some(msg) = read.into_body() {
+        Ok(Message::binary(msg))
+    } else {
+        Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed)
+    }
+}
 
 pub fn draw_joining(d: &mut RaylibDrawHandle, state: &mut AppState, cx: &mut Context, screen_width: i32, screen_height: i32) {
     if let Some(ref mut wssf) = state.websocket_future {
         match wssf.as_mut().poll(cx) {
             Poll::Ready(fut) => {
-                let (wss, resp) = fut;
-                println!("{:?}{:#?}", wss, resp);
-                state.program_state = ProgramState::InGame;
                 
-                tokio::spawn(async move {
-                    let mut writer = sink();
-                    let _ = writer.write(&[2]).await;
+                tokio::spawn( async move {
+                    match send_data_to_ws(fut).await {
+                        Ok(m) => println!("{m}"),
+                        Err(e) => println!("{e}")
+                    };
                 });
+                state.program_state = ProgramState::InGame;
             }
             Poll::Pending => {}
         }
