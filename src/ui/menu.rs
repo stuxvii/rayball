@@ -47,7 +47,6 @@ pub fn draw_menu(d: &mut RaylibDrawHandle, state: &mut AppState, screen_width:i3
                 }
                 _ => state.current_screen = btn.screen,
             }
-            println!("{:?}", state.current_screen);
         }
         if let Some(txt) = ICONS_SPRITESHEET.get() {
             let mut txt_cntr = Vector2 {

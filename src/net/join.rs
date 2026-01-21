@@ -29,6 +29,6 @@ pub async fn request_room_join(code: String) -> (WebSocketStream<tokio_tungsteni
     // custom headers so that the server lets us go through :pray:
     rq.headers_mut().insert("Origin", "https://www.haxball.com".parse().unwrap());
     // Hey basro. Or mario Carbajal. Feel free to block this specific user agent or whatever if that fits you. No biggie.
-    rq.headers_mut().insert("User-agent", "Mozilla/5.0 (raygui; raylib; rv:*) AcidBox's Rust H*xball Client That Uses Mother Fuckig Raylib".parse().unwrap());
+    rq.headers_mut().insert("User-agent", "Mozilla/5.0 (rust; raylib; rv:*) RayBaLL Client".parse().unwrap());
     connect_async(rq).await.unwrap()
 }
