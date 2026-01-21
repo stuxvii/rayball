@@ -72,8 +72,6 @@ async fn main() -> Result<(), Error> {
     let waker = noop_waker_ref();
     let mut cx = Context::from_waker(waker);
 
-    let mut errors: Vec<Alert> = vec![];
-
     let mut bg_scroll: f32 = 0.0;
     let bg_scroll_speed: f32;
     bg_scroll_speed = 32.;
@@ -120,7 +118,7 @@ async fn main() -> Result<(), Error> {
         program_state: if cfg_val!(atomget SKIP_TITLE) { ProgramState::Menu } else { ProgramState::AskInfo },
         websocket_future: None,
         logo_letter_amp_timer: 0.,
-        logo_letter_amp_tween: Tween::new(ease::linear_in, 32., 4., 50.),
+        logo_letter_amp_tween: Tween::new(ease::circ_out, 32., 4., 200.),
     };
 
     while !rl.window_should_close() {
@@ -161,9 +159,9 @@ async fn main() -> Result<(), Error> {
             }
             _ => (),
         }
-        if errors.len() > 0 {
-            for i in (0..errors.len()).rev() {
-                let er_box = &mut errors[i];
+        if state.errors.len() > 0 {
+            for i in (0..state.errors.len()).rev() {
+                let er_box = &mut state.errors[i];
                 let idx = i as i32;
 
                 let text = if er_box.fade {
@@ -190,7 +188,7 @@ async fn main() -> Result<(), Error> {
                 }
 
                 if result {
-                    errors.remove(i);
+                    state.errors.remove(i);
                 }
             }
         }
