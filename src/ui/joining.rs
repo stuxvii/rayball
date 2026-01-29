@@ -11,6 +11,7 @@ async fn send_data_to_ws(fut: (WebSocketStream<tokio_tungstenite::MaybeTlsStream
     let mut plr_state: Encoder = Encoder::new(None, None);
     plr_state.write_str_len_leb128(&cfg_val!(USERNAME));
     write.send(Message::binary(plr_state.as_slice())).await?;
+    dbg!(plr_state);
     if let Some(msg) = read.into_body() {
         Ok(Message::binary(msg))
     } else {
