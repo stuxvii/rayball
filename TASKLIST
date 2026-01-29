@@ -1,8 +1,6 @@
 Find out what to send to the WebSocket
 
 Find out how to encode each thing to send
-- Transpile decoder class
-
 - Encode username
 - Encode country (Latitude, Longitude and ISO code)
 - Encode avatar
