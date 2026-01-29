@@ -19,29 +19,24 @@ impl Encoder {
             pos: 0,
         }
     }
-
     fn ensure_capacity(&mut self, needed: usize) {
         if self.data.len() < needed {
             let new_len = (self.data.len() * 2).max(needed).max(1);
             self.data.resize(new_len, 0);
         }
     }
-
     pub fn as_slice(&self) -> Vec<u8> {
         self.data[..self.pos].to_vec()
     }
-
     pub fn buffer_copy(&self) -> &[u8] {
         &self.data[..self.pos]
     }
-
     pub fn write_u8(&mut self, v: u8) {
         let p: usize = self.pos;
         self.pos += 1;
         self.ensure_capacity(self.pos);
         self.data[p] = v;
     }
-
     pub fn write_i16(&mut self, v: i16) {
         let p: usize = self.pos;
         self.pos += 2;
@@ -52,7 +47,6 @@ impl Encoder {
             BigEndian::write_i16(&mut self.data[p..p + 2], v);
         }
     }
-
     pub fn write_u16(&mut self, v: u16) {
         let p: usize = self.pos;
         self.pos += 2;
@@ -63,7 +57,6 @@ impl Encoder {
             BigEndian::write_u16(&mut self.data[p..p + 2], v);
         }
     }
-
     pub fn write_i32(&mut self, v: i32) {
         let p = self.pos;
         self.pos += 4;
@@ -74,7 +67,6 @@ impl Encoder {
             BigEndian::write_i32(&mut self.data[p..p + 4], v);
         }
     }
-
     pub fn write_u32(&mut self, v: u32) {
         let p = self.pos;
         self.pos += 4;
@@ -85,7 +77,6 @@ impl Encoder {
             BigEndian::write_u32(&mut self.data[p..p + 4], v);
         }
     }
-
     pub fn write_f32(&mut self, v: f32) {
         let p: usize = self.pos;
         self.pos += 4;
@@ -96,7 +87,6 @@ impl Encoder {
             BigEndian::write_f32(&mut self.data[p..p + 4], v);
         }
     }
-
     pub fn write_f64(&mut self, v: f64) {
         let p = self.pos;
         self.pos += 8;
@@ -107,14 +97,12 @@ impl Encoder {
             BigEndian::write_f64(&mut self.data[p..p + 8], v);
         }
     }
-
     pub fn extend_from_slice(&mut self, bytes: &[u8]) {
         let p: usize = self.pos;
         self.pos += bytes.len();
         self.ensure_capacity(self.pos);
         self.data[p..p + bytes.len()].copy_from_slice(bytes);
     }
-
     pub fn write_len_prefixed_str(&mut self, s: &str) {
         let bytes: &[u8] = s.as_bytes();
         if bytes.len() > 255 {
@@ -123,11 +111,9 @@ impl Encoder {
         self.write_u8(bytes.len() as u8);
         self.extend_from_slice(bytes);
     }
-
     pub fn utf8_bit_length(s: &str) -> usize {
         s.chars().map(|c| c.len_utf8()).sum()
     }
-
     pub fn leb128_size(a: u32) -> usize {
         if a < 128 {
             1
@@ -145,7 +131,6 @@ impl Encoder {
             panic!("Charcode {a} was WAY too big! Report this bug! Program has halted.");
         }
     }
-
     pub fn write_u32_leb128(&mut self, mut a: u32) {
         let p: usize = self.pos;
         let len: usize = Self::leb128_size(a);
@@ -160,13 +145,11 @@ impl Encoder {
         self.data[p + i] = a as u8;
         self.pos += i + 1;
     }
-
     pub fn write_str_len_leb128(&mut self, s: &str) {
         let len: usize = Self::utf8_bit_length(s);
         self.write_u32_leb128(len as u32);
         self.extend_from_string(s);
     }
-
     pub fn write_opt_str_len_leb128(&mut self, s: Option<&str>) {
         match s {
             None => self.write_u32_leb128(0),
@@ -177,7 +160,6 @@ impl Encoder {
             }
         }
     }
-
     fn extend_from_string(&mut self, s: &str) {
         let bytes: &[u8] = s.as_bytes();
         self.ensure_capacity(self.pos + bytes.len());
@@ -351,12 +333,12 @@ impl Decoder {
         }
     }
     pub fn read_string_leb128(&mut self) -> Result<String, String> {
-        let a = self.read_leb128();
-        self.read_utf8_string_from_length(a)
-    }
-    pub fn read_string_u8(&mut self) -> Result<String, String> {
         let a = self.read_u8_byte();
         self.read_utf8_string_from_length(a.into())
+    }
+    pub fn read_string_u8(&mut self) -> Result<String, String> {
+        let a = self.read_leb128();
+        self.read_utf8_string_from_length(a)
     }
     pub fn jg(&mut self) -> Result<serde_json::Value, String> {
         let a: Result<String, String> = self.read_string_leb128();
