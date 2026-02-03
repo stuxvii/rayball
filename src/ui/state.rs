@@ -1,19 +1,18 @@
+use ezsockets::Client;
 use raylib::prelude::*;
 use clipboard_rs::ClipboardContext;
-use tokio_tungstenite::WebSocketStream;
 use crate::net::xcoder::Encoder;
 use crate::ui::primitives::{Room, SettingData};
 use crate::*;
 use std::collections::HashMap;
-use tokio::sync::mpsc;
-use futures::future::BoxFuture;
+use std::task::Context;
+use tokio::sync::mpsc::{self, Receiver};
 
 pub struct NavIcon {
     pub rect: Rectangle,
     pub screen: Screens,
 }
-
-pub struct AppState {
+pub struct AppState<'a> {
     pub navbar_buttons: Vec<NavIcon>,
     pub setting_toggles: Vec<SettingData>,
     pub errors: Vec<Alert>,
@@ -30,16 +29,21 @@ pub struct AppState {
     pub text_widths: HashMap<&'static str, i32>,
     pub tx: mpsc::UnboundedSender<Result<Vec<Room>, String>>,
     pub rx: mpsc::UnboundedReceiver<Result<Vec<Room>, String>>,
+    pub cx: Context<'a>,
     pub clipboard_ctx: ClipboardContext,
     pub program_state: ProgramState,
-    pub websocket_future: Option<BoxFuture<'static, (WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, tokio_tungstenite::tungstenite::http::Response<Option<Vec<u8>>>)>>,
     pub state: Encoder,
+    pub ws_client: Option<Client<crate::net::join::Client>>,
+    pub join_task: Option<Receiver<Client<net::join::Client>>>,
     pub logo_letter_amp_timer: f32,
     pub logo_letter_amp_tween: raylib::ease::Tween,
 }
 
-impl AppState {
+impl AppState<'_> {
     pub fn push_error(&mut self, text: String, fade: bool) {
         self.errors.push(Alert::new(text, fade));
+    }
+    pub fn change_state(&mut self, state: ProgramState) {
+        self.program_state = state;
     }
 }

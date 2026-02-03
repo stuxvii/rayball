@@ -251,7 +251,7 @@ impl Decoder {
     pub fn read_string(mut self) -> Result<Option<String>, Box<dyn std::error::Error + 'static>> {
         let a: usize = self.read_leb128();
         if a > 0 {
-            Ok(Some(self.read_utf8_string_from_length((a - 1).try_into().unwrap())?))
+            Ok(Some(self.read_utf8_string_from_length(a - 1)?))
         } else {
             Ok(None)
         }
@@ -270,66 +270,66 @@ impl Decoder {
         if self.le {
             let byte: i16 = LittleEndian::read_i16(&self.data[self.pos..self.pos+2]);
             self.pos += 2;
-            return byte
+            byte
         } else {
             let byte: i16 = BigEndian::read_i16(&self.data[self.pos..self.pos+2]);
             self.pos += 2;
-            return byte
+            byte
         }
     }
     pub fn read_u16_byte(&mut self) -> u16 {
         if self.le {
             let byte: u16 = LittleEndian::read_u16(&self.data[self.pos..self.pos+2]);
             self.pos += 2;
-            return byte
+            byte
         } else {
             let byte: u16 = BigEndian::read_u16(&self.data[self.pos..self.pos+2]);
             self.pos += 2;
-            return byte
+            byte
         }
     }
     pub fn read_i32_byte(&mut self) -> i32 {
         if self.le {
             let byte: i32 = LittleEndian::read_i32(&self.data[self.pos..self.pos+4]);
             self.pos += 4;
-            return byte
+            byte
         } else {
             let byte: i32 = BigEndian::read_i32(&self.data[self.pos..self.pos+4]);
             self.pos += 4;
-            return byte
+            byte
         }
     }
     pub fn read_u32_byte(&mut self) -> u32 {
         if self.le {
             let byte: u32 = LittleEndian::read_u32(&self.data[self.pos..self.pos+4]);
             self.pos += 4;
-            return byte
+            byte
         } else {
             let byte: u32 = BigEndian::read_u32(&self.data[self.pos..self.pos+4]);
             self.pos += 4;
-            return byte
+            byte
         }
     }
     pub fn read_f32_byte(&mut self) -> f32 {
         if self.le {
             let byte: f32 = LittleEndian::read_f32(&self.data[self.pos..self.pos+4]);
             self.pos += 4;
-            return byte
+            byte
         } else {
             let byte: f32 = BigEndian::read_f32(&self.data[self.pos..self.pos+4]);
             self.pos += 4;
-            return byte
+            byte
         }
     }
     pub fn read_f64_byte(&mut self) -> f64 {
         if self.le {
             let byte: f64 = LittleEndian::read_f64(&self.data[self.pos..self.pos+8]);
             self.pos += 8;
-            return byte
+            byte
         } else {
             let byte: f64 = BigEndian::read_f64(&self.data[self.pos..self.pos+8]);
             self.pos += 8;
-            return byte
+            byte
         }
     }
     pub fn read_string_leb128(&mut self) -> Result<String, String> {

@@ -1,10 +1,9 @@
-use clipboard_rs::Clipboard;
-use raylib::{math::rrect, prelude::{*}, rgui::RaylibDrawGui};
+use raylib::{math::rrect, prelude::*, rgui::RaylibDrawGui};
 
 use crate::{FLAGS_SPRITESHEET, ICONS_SPRITESHEET, ProgramState, Screens, cfg::layout, net::join::{parse_code, request_room_join}, ui::{flags, state::AppState}};
 use crate::net::rooms;
 use crate::ui::primitives::Room;
-use tokio::sync::mpsc;
+use tokio::{spawn, sync::mpsc::{self, channel}};
 
 pub fn thread_fetch(tx: mpsc::UnboundedSender<Result<Vec<Room>, String>>) {
     tokio::spawn(async move {
@@ -35,7 +34,7 @@ pub fn draw_menu(d: &mut RaylibDrawHandle, state: &mut AppState, screen_width:i3
 
     for (i, btn) in state.navbar_buttons.iter().enumerate() {
         let rect = rrect(
-            i as f32 * layout::BUTTON_HEIGHT as f32,
+            i as f32 * layout::BUTTON_HEIGHT,
             0,
             layout::BUTTON_HEIGHT,
             layout::BUTTON_HEIGHT,
@@ -90,22 +89,35 @@ pub fn draw_menu(d: &mut RaylibDrawHandle, state: &mut AppState, screen_width:i3
 
 fn draw_server_list(d: &mut RaylibDrawHandle, state: &mut AppState, screen_width: i32, screen_height: i32, dt: f32) {
     if d.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) && d.is_key_pressed(KeyboardKey::KEY_V) {
-        let clip: String = state.clipboard_ctx.get_text().unwrap();
-        match parse_code(clip) {
-            Ok(c) => {
-                state.websocket_future = Some(Box::pin(request_room_join(c)));
-                state.program_state = ProgramState::Joining;
+        let clip_r = clipboard_rs::Clipboard::get_text(&state.clipboard_ctx);
+        
+        match clip_r {
+            Ok(s) => {
+                match parse_code(s) {
+                    Ok(c) => {
+                        let (tx, rx) = channel(100);
+                        state.join_task = Some(rx);
+                        spawn(async move {
+                            println!("le joining room");
+                            let h: ezsockets::Client<crate::prelude::join::Client> = request_room_join(c).await.expect("yeah it errored out chief sorry");
+                            let _: Result<(), mpsc::error::SendError<ezsockets::Client<crate::prelude::join::Client>>> = tx.send(h).await;
+                        });
+                        
+                        state.program_state = ProgramState::Joining;
+                    }
+                    Err(e) => {
+                        state.push_error(e.to_string(), true);
+                    }
+                }
             }
-            Err(e) => {
-                state.push_error(e.to_string(), true);
-            }
+            Err(e) => state.push_error(format!("Error capturing clipboard text: {e}"), true),
         }
     }
 
     let wheel = d.get_mouse_wheel_move();
     state.rooms_per_page = ((screen_height as f32 / layout::BUTTON_HEIGHT) - layout::BUTTON_HEIGHT) as usize;
 
-    if !(!cfg_val!(atomget AUTO_FETCH) && !state.rooms_fetched_once) && !state.rooms_fetching {
+    if !(state.rooms_fetching || !cfg_val!(atomget AUTO_FETCH) && !state.rooms_fetched_once) {
         state.rooms_fetched_once = true;
         thread_fetch(state.tx.clone());
         state.rooms_fetching = true
@@ -126,7 +138,7 @@ fn draw_server_list(d: &mut RaylibDrawHandle, state: &mut AppState, screen_width
         state.amount_of_dots_in_loading_text = 0.;
     }
 
-    if state.rooms_list.len() == 0 && state.rooms_fetched {
+    if state.rooms_list.is_empty() && state.rooms_fetched {
         let mut txt_x = screen_width / 2;
         let txt_y = screen_height / 2;
         txt_x -= d.measure_text(&state.rooms_fetch_error, layout::FONT_SIZE) / 2;
@@ -192,7 +204,7 @@ fn draw_server_list(d: &mut RaylibDrawHandle, state: &mut AppState, screen_width
         }
 
         if let Some(id) = join_id {
-            state.websocket_future = Some(Box::pin(request_room_join(id)));
+            let _ = request_room_join(id);
             state.program_state = ProgramState::Joining;
         }
 

@@ -35,6 +35,11 @@ macro_rules! cfg_val {
     };
 }
 
+#[macro_export]
+macro_rules! clr_val {
+    ($field:ident) => { *crate::cfg::style::$field.lock().unwrap() };
+}
+
 fn atomset(a: &AtomicBool, y: bool) {
     a.store(y, std::sync::atomic::Ordering::Relaxed);
 }
@@ -91,11 +96,6 @@ pub fn generate_checkerboard(rl: &mut RaylibHandle, rt: &RaylibThread) -> Textur
     rl.load_texture_from_image(rt, &image).unwrap()
 }
 
-#[macro_export]
-macro_rules! clr_val {
-    ($field:ident) => { *crate::cfg::style::$field.lock().unwrap() };
-}
-
 pub fn save_config() {
     let mut map = BTreeMap::new();
 
@@ -108,6 +108,7 @@ pub fn save_config() {
     
     map.insert("username".to_string(), Value::from(cfg_val!(USERNAME).as_str()));
     map.insert("country".to_string(), Value::from(cfg_val!(COUNTRY).as_str()));
+    map.insert("avatar".to_string(), Value::from(cfg_val!(AVATAR).as_str()));
     map.insert("longitude".to_string(), Value::from(cfg_val!(LONGITUDE) as f64));
     map.insert("latitude".to_string(), Value::from(cfg_val!(LATITUDE) as f64));
     map.insert("fps".to_string(), Value::from(cfg_val!(FPS) as f64));
@@ -143,12 +144,14 @@ pub fn load_settings() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(v) = get_bool("skip_title")    {atomset(&SKIP_TITLE, v);}
     if let Some(v) = get_str("username")     {cfg_val!(USERNAME) = v; }
     if let Some(v) = get_str("country")      {cfg_val!(COUNTRY) = v; }
+    if let Some(v) = get_str("avatar")      {cfg_val!(AVATAR) = v; }
     if let Some(v) = get_num("longitude")       {cfg_val!(LONGITUDE) = v as f32; }
     if let Some(v) = get_num("latitude")        {cfg_val!(LATITUDE) = v as f32; }
     if let Some(v) = get_num("fps")             {cfg_val!(FPS) = v as u32; }
 
     cfg_val!(USERNAME).truncate(24);
     cfg_val!(COUNTRY).truncate(2);
+    cfg_val!(AVATAR).truncate(2);
 
     Ok(())
 }
@@ -181,6 +184,7 @@ pub mod cfg {
         pub static LONGITUDE: Mutex<f32> = Mutex::new(-68.5040);
         pub static USERNAME: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("".to_string()));
         pub static COUNTRY: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("ar".to_string()));
+        pub static AVATAR: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("<3".to_string()));
     }
 
     pub mod style {
@@ -252,6 +256,7 @@ pub mod ui {
     pub mod state;
     pub mod flags;
     pub mod menu;
+    pub mod ingame;
     pub mod joining;
 }
 
@@ -260,4 +265,12 @@ pub mod net {
     pub mod join;
     pub mod idkey;
     pub mod xcoder;
+}
+
+pub mod prelude {
+    pub use crate::net::*;
+    pub use crate::ui::*;
+    pub use crate::cfg::config::*;
+    pub use crate::cfg::layout::*;
+    pub use crate::cfg::style::*;
 }

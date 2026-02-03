@@ -112,18 +112,16 @@ impl Room {
             height: 11.0,
         };
 
-        if self.locked {
-            if let Some(tex) = ICONS_SPRITESHEET.get() {
-                d.draw_texture_rec(
-                    tex,
-                    lock_text_rec,
-                    Vector2 {
-                        y: lock_bg_rect.y + layout::SPACING,
-                        x: lock_bg_rect.x + layout::SPACING,
-                    },
-                    raylib::color::Color::WHITE,
-                );
-            }
+        if self.locked && let Some(tex) = ICONS_SPRITESHEET.get() {
+            d.draw_texture_rec(
+                tex,
+                lock_text_rec,
+                Vector2 {
+                    y: lock_bg_rect.y + layout::SPACING,
+                    x: lock_bg_rect.x + layout::SPACING,
+                },
+                raylib::color::Color::WHITE,
+            );
         }
 
         clicked

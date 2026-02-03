@@ -5,7 +5,8 @@ use rayball_rs::cfg::config::*;
 use rayball_rs::cfg::layout;
 use rayball_rs::net::xcoder::Encoder;
 use rayball_rs::ui::cursor::CursorTrail;
-use rayball_rs::ui::{joining, menu, title};
+use rayball_rs::ui::joining;
+use rayball_rs::ui::{menu, title};
 use rayball_rs::ui::primitives::{Room, SettingData};
 use rayball_rs::ui::state::{AppState, NavIcon};
 use rayball_rs::*;
@@ -36,7 +37,7 @@ async fn main() -> Result<(), Error> {
         }
     }
 
-    let program_name = "RayBaLL";
+    let program_name = "RayBall";
     let (mut rl, rt) = raylib::init()
         .resizable()
         .title(program_name)
@@ -71,11 +72,10 @@ async fn main() -> Result<(), Error> {
     }
 
     let waker = noop_waker_ref();
-    let mut cx = Context::from_waker(waker);
+    let cx: Context<'_> = Context::from_waker(waker);
 
     let mut bg_scroll: f32 = 0.0;
-    let bg_scroll_speed: f32;
-    bg_scroll_speed = 32.;
+    let bg_scroll_speed: f32 = 32.;
 
     let (tx, rx) = mpsc::unbounded_channel::<Result<Vec<Room>, String>>();
 
@@ -109,15 +109,17 @@ async fn main() -> Result<(), Error> {
         amount_of_dots_in_loading_text: 0.,
         text_widths: HashMap::from([
             ("list", rl.measure_text(&"W".repeat(48), layout::FONT_SIZE)),
-            ("clck", rl.measure_text(&"00:00:00", layout::FONT_SIZE)),
-            ("erro", rl.measure_text(&"Error!", layout::FONT_SIZE)),
+            ("clck", rl.measure_text("00:00:00", layout::FONT_SIZE)),
+            ("erro", rl.measure_text("Error!", layout::FONT_SIZE)),
             ("usnm", rl.measure_text(&"W".repeat(25), layout::FONT_SIZE)),
         ]),
         tx,
         rx,
+        cx,
+        ws_client: None,
+        join_task: None,
         clipboard_ctx: ClipboardContext::new().unwrap(),
         program_state: if cfg_val!(atomget SKIP_TITLE) { ProgramState::Menu } else { ProgramState::AskInfo },
-        websocket_future: None,
         state: Encoder::new(None, None),
         logo_letter_amp_timer: 0.,
         logo_letter_amp_tween: Tween::new(ease::circ_out, 32., 4., 200.),
@@ -154,14 +156,14 @@ async fn main() -> Result<(), Error> {
                 menu::draw_menu(&mut d, &mut state, screen_width, screen_height, dt);
             }
             ProgramState::Joining => {
-                joining::draw_joining(&mut d, &mut state, &mut cx, screen_width, screen_height);
+                joining::draw_joining(&mut d, &mut state, screen_width, screen_height);
             }
             ProgramState::AskInfo => {
                 title::draw_ask_info(&mut d, &mut state, program_name, screen_width, screen_height, dt);
             }
             _ => (),
         }
-        if state.errors.len() > 0 {
+        if state.errors.is_empty() {
             for i in (0..state.errors.len()).rev() {
                 let er_box = &mut state.errors[i];
                 let idx = i as i32;

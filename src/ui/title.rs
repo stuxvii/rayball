@@ -4,13 +4,12 @@ use crate::*;
 use crate::ui::state::AppState;
 
 pub fn draw_ask_info(d: &mut RaylibDrawHandle, state: &mut AppState, program_name: &str, screen_width: i32, screen_height: i32, dt: f32) {
-    let amplitude;
-    if state.logo_letter_amp_timer < state.logo_letter_amp_tween.duration() {
+    let amplitude = if state.logo_letter_amp_timer < state.logo_letter_amp_tween.duration() {
         state.logo_letter_amp_timer += dt;
-        amplitude = state.logo_letter_amp_tween.apply(state.logo_letter_amp_timer);
+        state.logo_letter_amp_tween.apply(state.logo_letter_amp_timer)
     } else {
-        amplitude = 4.;
-    }
+        4.
+    };
     
     for (i, c) in program_name.chars().enumerate() {
         let spacing = 25.;

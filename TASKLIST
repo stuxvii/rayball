@@ -1,9 +1,5 @@
 Find out what to send to the WebSocket
 
-Find out how to encode each thing to send
-- Encode username
-- Encode country (Latitude, Longitude and ISO code)
-- Encode avatar
 - Encode version (Idiot)
 - Encode ICE servers
 TODO: Figure out what En, Kn, state, and Rs are for.
