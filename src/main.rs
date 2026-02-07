@@ -3,7 +3,8 @@ use clipboard_rs::ClipboardContext;
 use futures::task::noop_waker_ref;
 use rayball_rs::cfg::config::*;
 use rayball_rs::cfg::layout;
-use rayball_rs::net::xcoder::Encoder;
+use rayball_rs::net::join::request_room_join;
+use rayball_rs::net::xcoder::BinaryEncoder;
 use rayball_rs::ui::cursor::CursorTrail;
 use rayball_rs::ui::joining;
 use rayball_rs::ui::{menu, title};
@@ -24,6 +25,8 @@ async fn main() -> Result<(), Error> {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
+    tracing_subscriber::fmt::init();
+
     match load_settings() {
         Ok(_) => {
             println!("Successfully loaded configuration!");
@@ -36,6 +39,17 @@ async fn main() -> Result<(), Error> {
             save_config();
         }
     }
+
+    match request_room_join(String::from("Tvt3L9EtYV4")).await {
+        Ok(_) => {
+            println!("Waiting for messages (Ctrl+C to exit)...");
+            tokio::signal::ctrl_c().await.unwrap();
+            println!("Exiting...");
+        },
+        Err(e) => println!("Connection failed: {e}"),
+    }
+
+    return Ok(());
 
     let program_name = "RayBall";
     let (mut rl, rt) = raylib::init()
@@ -120,7 +134,7 @@ async fn main() -> Result<(), Error> {
         join_task: None,
         clipboard_ctx: ClipboardContext::new().unwrap(),
         program_state: if cfg_val!(atomget SKIP_TITLE) { ProgramState::Menu } else { ProgramState::AskInfo },
-        state: Encoder::new(None, None),
+        state: BinaryEncoder::new(256, true),
         logo_letter_amp_timer: 0.,
         logo_letter_amp_tween: Tween::new(ease::circ_out, 32., 4., 200.),
     };

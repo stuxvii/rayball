@@ -1,7 +1,7 @@
 use ezsockets::Client;
 use raylib::prelude::*;
 use clipboard_rs::ClipboardContext;
-use crate::net::xcoder::Encoder;
+use crate::net::xcoder::BinaryEncoder;
 use crate::ui::primitives::{Room, SettingData};
 use crate::*;
 use std::collections::HashMap;
@@ -32,7 +32,7 @@ pub struct AppState<'a> {
     pub cx: Context<'a>,
     pub clipboard_ctx: ClipboardContext,
     pub program_state: ProgramState,
-    pub state: Encoder,
+    pub state: BinaryEncoder,
     pub ws_client: Option<Client<crate::net::join::Client>>,
     pub join_task: Option<Receiver<Client<net::join::Client>>>,
     pub logo_letter_amp_timer: f32,

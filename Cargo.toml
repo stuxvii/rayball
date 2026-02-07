@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 chrono = "0.4.42"
-deflate = "1.0.0"
 haversine = "0.2.1"
 minreq = "2.14.1"
 raylib = { version = "5.5.1", default-features = false}
@@ -24,8 +23,13 @@ base64 = "0.22.1"
 byteorder = "1.5.0"
 bytes = "1.11.0"
 leb128 = "0.2.5"
-ezsockets = { version = "0.7.1", features = ["client"] }
+ezsockets = { version = "0.7.1", features = ["client", "native-tls"] }
 async-trait = "0.1.89"
+fast_websocket_client = "0.4.1"
+http = "1.4.0"
+tracing-subscriber = "0.3.22"
+zune-core = "0.5.1"
+flate2 = "1.1.9"
 
 [profile.release]
 opt-level = "z"
