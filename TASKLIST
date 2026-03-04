@@ -1,7 +1,0 @@
-Find out what to send to the WebSocket
-
-- Encode version (Idiot)
-- Encode ICE servers
-TODO: Figure out what En, Kn, state, and Rs are for.
-
-Find out what to do with the data received after sent

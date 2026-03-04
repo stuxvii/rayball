@@ -40,16 +40,19 @@ async fn main() -> Result<(), Error> {
         }
     }
 
-    match request_room_join(String::from("Tvt3L9EtYV4")).await {
-        Ok(_) => {
-            println!("Waiting for messages (Ctrl+C to exit)...");
-            tokio::signal::ctrl_c().await.unwrap();
-            println!("Exiting...");
-        },
-        Err(e) => println!("Connection failed: {e}"),
+    let args: Vec<String> = std::env::args().collect();
+    
+    if let Some(code) = args.get(1) {
+        match request_room_join(code.to_string()).await {
+            Ok(_) => {
+                println!("Waiting for messages (Ctrl+C to exit)...");
+                tokio::signal::ctrl_c().await.unwrap();
+                println!("Exiting...");
+            },
+            Err(e) => println!("Connection failed: {e}"),
+        }
+        return Ok(());
     }
-
-    return Ok(());
 
     let program_name = "RayBall";
     let (mut rl, rt) = raylib::init()

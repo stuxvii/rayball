@@ -1,76 +1,72 @@
-use crate::net::xcoder::BinaryEncoder;
+use crate::net::idkey::IdKey;
+use crate::net::xcoder::{BinaryDecoder, BinaryEncoder};
+use crate::prelude::USERNAME;
 use async_trait::async_trait;
-use base64::write::EncoderWriter;
 use ezsockets::ClientConfig;
-use flate2::Compression;
+use flate2::write::DeflateEncoder;
+use flate2::{Compression, read::DeflateDecoder};
+use std::io::Read;
 use std::{collections::HashMap, error::Error, io::Write, sync::Arc};
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::{Mutex, MutexGuard, mpsc};
 use url::Url;
+use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 use webrtc::{
     api::{APIBuilder, media_engine::MediaEngine},
     data_channel::data_channel_init::RTCDataChannelInit,
-    ice_transport::ice_server::RTCIceServer,
+    ice_transport::{
+        ice_candidate::RTCIceCandidateInit, ice_gatherer_state::RTCIceGathererState,
+        ice_server::RTCIceServer,
+    },
     peer_connection::configuration::RTCConfiguration,
 };
 
 pub struct Client {
     handle: ezsockets::Client<Self>,
+    peer_connection: Option<Arc<webrtc::peer_connection::RTCPeerConnection>>,
+}
+
+#[derive(serde::Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct IceCandidateJson {
+    candidate: String,
+    sdp_mid: String,
+    sdp_m_line_index: u16,
+    username_fragment: Option<String>,
+}
+
+fn decode_signal_packet(packet: &[u8]) -> (u8, Vec<u8>) {
+    if packet.is_empty() {
+        panic!("Packet is too short to contain an opcode");
+    }
+
+    let op_code = packet[0];
+    let compressed_payload = &packet[1..];
+
+    let mut decoder = DeflateDecoder::new(compressed_payload);
+    let mut decompressed_payload = Vec::new();
+
+    decoder
+        .read_to_end(&mut decompressed_payload)
+        .expect("Failed to decompress payload");
+
+    (op_code, decompressed_payload)
 }
 
 fn encode_signal_packet(op_code: u8, payload_buffer: &[u8]) -> Vec<u8> {
-    let mut encoder: flate2::write::DeflateEncoder<Vec<u8>> =
-        flate2::write::DeflateEncoder::new(Vec::new(), Compression::default());
-
+    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(6));
     encoder.write_all(payload_buffer).unwrap();
-    let compressed: Vec<u8> = encoder.finish().expect("Failed to compress");
+    let compressed = encoder.finish().expect("Failed to compress");
 
-    let mut packet: Vec<u8> = Vec::with_capacity(1 + compressed.len());
+    let mut packet = Vec::with_capacity(1 + compressed.len());
     packet.push(op_code);
     packet.extend_from_slice(&compressed);
     packet
 }
 
-fn hex_to_u8_manual(hex: &str) -> Result<Vec<u8>, std::num::ParseIntError> {
-    // Check if the hex string length is even
-    if hex.len() % 2 != 0 {
-        // return Err(ParseIntError); // Simplified error for demo; see note below
-    }
-
-    // Iterate over the hex string in chunks of 2 characters
-    let bytes: Result<Vec<u8>, _> = hex
-        .as_bytes()
-        .chunks(2)
-        .map(|chunk| {
-            // Convert chunk (2 bytes) to a &str
-            let hex_chunk = std::str::from_utf8(chunk).expect("Invalid UTF-8 in hex string");
-            // Parse hex chunk to u8 (base 16)
-            u8::from_str_radix(hex_chunk, 16)
-        })
-        .collect();
-
-    bytes
-}
-
 #[async_trait]
 impl ezsockets::ClientExt for Client {
     type Call = Vec<u8>;
-
-    async fn on_text(&mut self, text: ezsockets::Utf8Bytes) -> Result<(), ezsockets::Error> {
-        println!("received message: {text}");
-        Ok(())
-    }
-
-    async fn on_binary(&mut self, bytes: ezsockets::Bytes) -> Result<(), ezsockets::Error> {
-        println!("received bytes: {bytes:?}");
-        Ok(())
-    }
-
-    async fn on_call(&mut self, call: Self::Call) -> Result<(), ezsockets::Error> {
-        let data: Vec<u8> = call;
-        dbg!(data);
-        Ok(())
-    }
 
     async fn on_connect(&mut self) -> Result<(), ezsockets::Error> {
         let config: RTCConfiguration = RTCConfiguration {
@@ -86,34 +82,45 @@ impl ezsockets::ClientExt for Client {
         let peer_connection: Arc<webrtc::peer_connection::RTCPeerConnection> =
             Arc::new(api.new_peer_connection(config).await?);
 
-        // this shit is ridiculous
-        let finished_gathering: Arc<Notify> = Arc::new(Notify::new());
-        let notify_clone: Arc<Notify> = Arc::clone(&finished_gathering);
-        
-        let candidate_buffer: Arc<Mutex<BinaryEncoder>> =
-            Arc::new(Mutex::new(BinaryEncoder::new(0, false)));
-        let cb_clone = Arc::clone(&candidate_buffer);
+        let (done_tx, mut done_rx) = mpsc::channel::<()>(1);
+
+        let candidates = Arc::new(Mutex::new(Vec::new()));
+        let c_clone = Arc::clone(&candidates);
 
         peer_connection.on_ice_candidate(Box::new(move |candidate| {
-            let inner_buffer = Arc::clone(&cb_clone);
-            let inner_notify = Arc::clone(&notify_clone);
-
+            let c_clone = Arc::clone(&c_clone);
             Box::pin(async move {
-                match candidate {
-                    Some(cand) => {
-                        let json_obj = cand.to_json().unwrap();
-                        let x = encode_signal_packet(4, json_obj.candidate.as_bytes());
-                        inner_buffer.lock().await.append_bytes(&x);
-                    }
-                    None => {
-                        inner_notify.notify_one();
+                if let Some(cand) = candidate {
+                    if let Ok(json) = cand.to_json() {
+                        c_clone.lock().await.push(json);
                     }
                 }
             })
         }));
-        
-        peer_connection.create_data_channel("ro", None).await?;
-        peer_connection
+
+        peer_connection.on_ice_gathering_state_change(Box::new(move |state| {
+            let done_tx = done_tx.clone();
+            Box::pin(async move {
+                if state == RTCIceGathererState::Complete {
+                    let _ = done_tx.send(()).await;
+                }
+            })
+        }));
+
+        peer_connection.gathering_complete_promise().await;
+
+        let dc_ro = peer_connection.create_data_channel("ro", None).await?;
+        let dc_uu = peer_connection
+            .create_data_channel(
+                "uu",
+                Some(RTCDataChannelInit {
+                    ordered: Some(false),
+                    max_retransmits: Some(0),
+                    ..Default::default()
+                }),
+            )
+            .await?;
+        let dc_ru = peer_connection
             .create_data_channel(
                 "ru",
                 Some(RTCDataChannelInit {
@@ -124,44 +131,117 @@ impl ezsockets::ClientExt for Client {
             )
             .await?;
 
-        peer_connection
-            .create_data_channel(
-                "uu",
-                Some(RTCDataChannelInit {
-                    ordered: Some(false),
-                    max_retransmits: Some(0),
-                    ..Default::default()
-                }),
-            )
-            .await?;
+        let dc_uu_label = dc_uu.label().to_owned();
+        dc_uu.on_open(Box::new( move || {
+        println!("Data channel {dc_uu_label} is now open!!!");
+        Box::pin(async{})
+    }));
 
-        let offer: webrtc::peer_connection::sdp::session_description::RTCSessionDescription =
-            peer_connection.create_offer(None).await?;
+        dc_uu.on_message(Box::new(move |msg| {
+            let payload = String::from_utf8_lossy(&msg.data);
+            println!("Received message: {}", payload);
+            Box::pin(async {})
+        }));
+
+        let dc_ru_label = dc_ru.label().to_owned();
+        dc_ru.on_open(Box::new( move || {
+        println!("Data channel {dc_ru_label} is now open!!!");
+        Box::pin(async{})
+    }));
+
+        dc_ru.on_message(Box::new(move |msg| {
+            let payload = String::from_utf8_lossy(&msg.data);
+            println!("Received message: {}", payload);
+            Box::pin(async {})
+        }));
+
+        let dc_ro_label = dc_ro.label().to_owned();
+        let dc_clone = Arc::clone(&dc_ro);
+        dc_ro.on_open(Box::new(move || {
+            println!("Data channel {dc_ro_label} is now open!");
+            let dc_clone = Arc::clone(&dc_clone);
+            Box::pin(async move {
+                let id_key = IdKey::generate();
+                
+                let mut player_data = BinaryEncoder::new(256, true);
+                player_data.w_u8(0x01);
+                player_data.w_nullable_str(Some(&cfg_val!(USERNAME)));
+                player_data.w_nullable_str(Some(&cfg_val!(AVATAR)));
+                player_data.w_str(&cfg_val!(COUNTRY));
+                player_data.w_str(&id_key.get());
+                let data = bytes::Bytes::copy_from_slice(player_data.bytes());
+                println!("Sending player data through dc_{dc_ro_label}");
+                if let Err(e) = dc_clone.send(&data).await {
+                    println!("Failed to send player data: {:?}", e);
+                }
+            })
+        }));
+
+        dc_ro.on_message(Box::new(move |msg| {
+            let payload = String::from_utf8_lossy(&msg.data);
+            println!("Received message: {}", payload);
+            Box::pin(async {})
+        }));
+
+        let offer = peer_connection.create_offer(None).await?;
         peer_connection.set_local_description(offer.clone()).await?;
-        
-        finished_gathering.notified().await;
-        let guard = candidate_buffer.lock().await;
+        self.peer_connection = Some(peer_connection);
+        let _ = done_rx.recv().await;
 
         let offer_sdp: String = offer.sdp;
 
-        let mut handshake: BinaryEncoder = BinaryEncoder::new(16, true);
-        handshake.w_u16(9);
-        handshake.w_nullable_str_len(None);
+        let final_candidates: MutexGuard<'_, Vec<RTCIceCandidateInit>> = candidates.lock().await;
+        let json_string: String = serde_json::to_string(&*final_candidates)?;
 
         let mut payload: BinaryEncoder = BinaryEncoder::new(256, true);
-        payload.w_u8(0);
-        payload.w_str_len(&offer_sdp);
-        payload.w_str_len("[]");
-        payload.append_bytes(&handshake.data);
+        payload.w_u8(0x00);
+        payload.w_str(&offer_sdp);
+        payload.w_str(&json_string);
+        payload.w_u16(0x0900);
+        payload.w_u8(0x00);
 
-        let r = self.handle.binary(encode_signal_packet(1, &guard.data));
+        let data = encode_signal_packet(1, &payload.data);
+        self.handle.binary(data).unwrap();
 
-        // let text = "01bd944d6bdc3010867328942eec7f107b2c913b922d4b1ad883b31f742109a1bba187528a6cc989a9bfb09d649bd24bff6dff45b59ba409851e7248b10d2faf06e699d18c0f7ebeba9ec278d44cabe6b6284b1304c1e6fd6afdc5bfebf959f2619350ad03204c84c064a843c541ca5000030264754a5667118160ff8c47fd948e47c3d41f8d47669a17f585ebdaaea807ec2f0de522264aa26238d3385be09261bcc044239f2124389f63b240e0b858220f5124a8bce935602291cd70ae512f71ae7016a216b81498449824c805f2234c96b85cecd25e74cd558b47e7a7f3e3c51d489139dab443d1d43d0e5d917d2dddceaefac2d2de55a61e8a0c3f9eacc9dbf1a89a9ab62d8bccecc28926e7f3b377f3cdf1fadd7ab63923372eed868c5a3398ecd2d4b52bc7a36cfa771bccb477b5ed5c76bdd36e3b54a6a5a62c9b1b5a155b671f98da1b8b1900e791764ec72a4e63885d08792a25b7228bb5740fb15779672e90dbdc01cbd51ebfb0789f6cf0059b6c684ddfef0d2f69db74030a807d4865b6b4727d6f2e1ced8b5b870c642823a678381efd7afde9fb2433b52d7c5d6e828f1afdc5ef3a4038e39c2909200973b9342e026a621dd288bb88a632cda8cbe3d479eed41911944d664a2284569c0cdf5a72d9f4c3e470d2dbf6e4b8a8ddaab66e3b41b8730aeb73823fbeea5d579bca2d7da995ab076f3f143cf971f82f46fe84910b2ea29068a9a43490529b1a4d239903d5cc2b151bc6988e2c17fa9e31128ac72fce1879c6cd6cc708c267d49ef1197dd47ff8c890b55e3be26fbbb8762f852b9ee00a1e45523fa7a5ff1d97dd4f008b959f3819723fa52a0e380f840c9822a18805eca1fa2e2fb7a433d6760feb4abadda6107829b8f0112e06c163bf425c01f8dfa0ff52860a6c8e7e881f07f1e5203f1fbc39f80d";
-        // let bin = hex_to_u8_manual(text).unwrap();
-        // let r = self.handle.binary(bin);
-        r.unwrap();
-        println!("sent data!");
+        Ok(())
+    }
 
+    async fn on_text(&mut self, text: ezsockets::Utf8Bytes) -> Result<(), ezsockets::Error> {
+        println!("received message: {text}");
+        Ok(())
+    }
+
+    async fn on_binary(&mut self, bytes: ezsockets::Bytes) -> Result<(), ezsockets::Error> {
+        let decoded_bytes = decode_signal_packet(&bytes);
+
+        let mut payload = BinaryDecoder::new(&decoded_bytes.1, false);
+        let offer_sdp = payload.r_str();
+        let candidates_json_list: Vec<IceCandidateJson> = payload.r_json();
+
+        println!("Candidates: {:?}", candidates_json_list);
+        if let Some(peer_connection) = &self.peer_connection {
+            println!("SDP Answer being set: {}", offer_sdp);
+            let desc = RTCSessionDescription::answer(offer_sdp)?;
+            peer_connection.set_remote_description(desc).await?;
+
+            for c in candidates_json_list {
+                peer_connection
+                    .add_ice_candidate(RTCIceCandidateInit {
+                        candidate: c.candidate,
+                        sdp_mid: Some(c.sdp_mid),
+                        sdp_mline_index: Some(c.sdp_m_line_index),
+                        username_fragment: c.username_fragment,
+                    })
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn on_call(&mut self, call: Self::Call) -> Result<(), ezsockets::Error> {
+        let data: Vec<u8> = call;
+        dbg!(data);
         Ok(())
     }
 
@@ -180,14 +260,18 @@ pub async fn request_room_join(code: String) -> Result<ezsockets::Client<Client>
             // ehh good enough
             .header(
                 "User-agent",
-                "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/17.38 Firefox/147.0.0.0.0.0.0",
+                "Mozilla/5.0 (raylib; Linux x86_64; rv:147.0) HaxBall Rayball Client",
             )
-            .header("Origin", "https://www.haxball.com")
-            .header("Sec-Fetch-Dest", "empty")
-            .header("Sec-Fetch-Mode", "websocket")
-            .header("Sec-Fetch-Site", "same-site");
+            .header("Origin", "https://www.haxball.com");
 
-    let (handle, future) = ezsockets::connect(|h| Client { handle: h }, rq).await;
+    let (handle, future) = ezsockets::connect(
+        |h| Client {
+            handle: h,
+            peer_connection: None,
+        },
+        rq,
+    )
+    .await;
     tokio::spawn(async move {
         if let Err(e) = future.await {
             eprintln!("Connection closed: {e}");
