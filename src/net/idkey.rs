@@ -1,5 +1,7 @@
-use p256::{ecdsa::SigningKey, elliptic_curve::rand_core::OsRng};
+use p256::{ecdsa::{SigningKey}, elliptic_curve::rand_core::OsRng};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+
+use crate::net::xcoder::BinaryEncoder;
 
 #[allow(dead_code)]
 pub struct IdKey {
@@ -14,7 +16,6 @@ impl IdKey {
     pub fn generate() -> Self {
         let signing_key = SigningKey::random(&mut OsRng);
         let verifying_key = signing_key.verifying_key();
-
         let public_point = verifying_key.to_encoded_point(false);
         let x: String = URL_SAFE_NO_PAD.encode(public_point.x().unwrap());
         let y: String = URL_SAFE_NO_PAD.encode(public_point.y().unwrap());
@@ -22,5 +23,13 @@ impl IdKey {
         let private_bytes = signing_key.to_bytes();
         let d: String = URL_SAFE_NO_PAD.encode(private_bytes);
         IdKey { x, y, d, signing_key }
+    }
+    pub fn signing_challenge(&self) {
+        let mut buffer = BinaryEncoder::new(false);
+        buffer.w_u8(1);
+        buffer.w_u16(0);
+        buffer.w_str(&self.x);
+        buffer.w_str(&self.y);
+        // self.signing_key.sign(bytes.)
     }
 }

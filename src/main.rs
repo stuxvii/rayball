@@ -137,7 +137,7 @@ async fn main() -> Result<(), Error> {
         join_task: None,
         clipboard_ctx: ClipboardContext::new().unwrap(),
         program_state: if cfg_val!(atomget SKIP_TITLE) { ProgramState::Menu } else { ProgramState::AskInfo },
-        state: BinaryEncoder::new(256, true),
+        state: BinaryEncoder::new(true),
         logo_letter_amp_timer: 0.,
         logo_letter_amp_tween: Tween::new(ease::circ_out, 32., 4., 200.),
     };

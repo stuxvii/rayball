@@ -1,6 +1,4 @@
-use crate::net::idkey::IdKey;
 use crate::net::xcoder::{BinaryDecoder, BinaryEncoder};
-use crate::prelude::USERNAME;
 use async_trait::async_trait;
 use ezsockets::ClientConfig;
 use flate2::write::DeflateEncoder;
@@ -53,7 +51,7 @@ fn decode_signal_packet(packet: &[u8]) -> (u8, Vec<u8>) {
     (op_code, decompressed_payload)
 }
 
-fn encode_signal_packet(op_code: u8, payload_buffer: &[u8]) -> Vec<u8> {
+fn compress_signal_packet(op_code: u8, payload_buffer: &[u8]) -> Vec<u8> {
     let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(6));
     encoder.write_all(payload_buffer).unwrap();
     let compressed = encoder.finish().expect("Failed to compress");
@@ -132,10 +130,10 @@ impl ezsockets::ClientExt for Client {
             .await?;
 
         let dc_uu_label = dc_uu.label().to_owned();
-        dc_uu.on_open(Box::new( move || {
-        println!("Data channel {dc_uu_label} is now open!!!");
-        Box::pin(async{})
-    }));
+        dc_uu.on_open(Box::new(move || {
+            println!("Data channel {dc_uu_label} is now open!!!");
+            Box::pin(async {})
+        }));
 
         dc_uu.on_message(Box::new(move |msg| {
             let payload = String::from_utf8_lossy(&msg.data);
@@ -144,10 +142,10 @@ impl ezsockets::ClientExt for Client {
         }));
 
         let dc_ru_label = dc_ru.label().to_owned();
-        dc_ru.on_open(Box::new( move || {
-        println!("Data channel {dc_ru_label} is now open!!!");
-        Box::pin(async{})
-    }));
+        dc_ru.on_open(Box::new(move || {
+            println!("Data channel {dc_ru_label} is now open!!!");
+            Box::pin(async {})
+        }));
 
         dc_ru.on_message(Box::new(move |msg| {
             let payload = String::from_utf8_lossy(&msg.data);
@@ -159,48 +157,65 @@ impl ezsockets::ClientExt for Client {
         let dc_clone = Arc::clone(&dc_ro);
         dc_ro.on_open(Box::new(move || {
             println!("Data channel {dc_ro_label} is now open!");
-            let dc_clone = Arc::clone(&dc_clone);
-            Box::pin(async move {
-                let id_key = IdKey::generate();
-                
-                let mut player_data = BinaryEncoder::new(256, true);
-                player_data.w_u8(0x01);
-                player_data.w_nullable_str(Some(&cfg_val!(USERNAME)));
-                player_data.w_nullable_str(Some(&cfg_val!(AVATAR)));
-                player_data.w_str(&cfg_val!(COUNTRY));
-                player_data.w_str(&id_key.get());
-                let data = bytes::Bytes::copy_from_slice(player_data.bytes());
-                println!("Sending player data through dc_{dc_ro_label}");
-                if let Err(e) = dc_clone.send(&data).await {
-                    println!("Failed to send player data: {:?}", e);
-                }
-            })
+            Box::pin(async move {})
         }));
 
         dc_ro.on_message(Box::new(move |msg| {
             let payload = String::from_utf8_lossy(&msg.data);
+            let dc_clone = Arc::clone(&dc_clone);
             println!("Received message: {}", payload);
-            Box::pin(async {})
+            Box::pin(async {
+                let mut user_info = BinaryEncoder::new(false);
+                user_info.w_str(&cfg_val!(USERNAME));
+                user_info.w_str(&cfg_val!(COUNTRY));
+                user_info.w_nullable_str(Some(&cfg_val!(AVATAR)));
+
+                let mut data = BinaryEncoder::new(false);
+                data.w_u8(0);
+                // Here, ideally i would write a byte that is the hex code indicating the full length of the idkey.x + signing challenge
+                // let mut cryptography_data = BinaryEncoder::new(false);
+                // cryptography_data.w_str(&cfg_val!(IDKEY).x)
+                // cryptography_data.w_u8(crypto_challenge.bytes().len() as u8)
+                // cryptography_data.append_bytes(crypto_challenge.bytes()) // append_byte doesnt manage specifying the length of the added data, must manage that ourselves
+                // Then just write all that.
+                // And write the length of the user_info along with the user info.
+                data.w_u8(user_info.bytes().len() as u8);
+                data.append_bytes(user_info.bytes());
+
+                // let data = bytes::Bytes::copy_from_slice(data.bytes());
+                // println!("Sending player data through dc_{dc_ro_label}");
+                // if let Err(e) = dc_clone.send(&data).await {println!("Failed to send player data: {:?}", e)}
+            })
         }));
 
         let offer = peer_connection.create_offer(None).await?;
         peer_connection.set_local_description(offer.clone()).await?;
+        
+        let final_sdp = peer_connection.local_description().await.ok_or("No local description")?;
+        let offer_sdp: String = final_sdp.sdp;
+
         self.peer_connection = Some(peer_connection);
         let _ = done_rx.recv().await;
-
-        let offer_sdp: String = offer.sdp;
 
         let final_candidates: MutexGuard<'_, Vec<RTCIceCandidateInit>> = candidates.lock().await;
         let json_string: String = serde_json::to_string(&*final_candidates)?;
 
-        let mut payload: BinaryEncoder = BinaryEncoder::new(256, true);
+        let mut payload: BinaryEncoder = BinaryEncoder::new(true);
         payload.w_u8(0x00);
         payload.w_str(&offer_sdp);
         payload.w_str(&json_string);
         payload.w_u16(0x0900);
         payload.w_u8(0x00);
 
-        let data = encode_signal_packet(1, &payload.data);
+        let bytes = &payload.data;
+        for byte in bytes {
+            print!("{:02x}", byte);
+        }
+        print!("\n");
+
+        // return Ok(());
+
+        let data = compress_signal_packet(1, &payload.data);
         self.handle.binary(data).unwrap();
 
         Ok(())
@@ -218,9 +233,7 @@ impl ezsockets::ClientExt for Client {
         let offer_sdp = payload.r_str();
         let candidates_json_list: Vec<IceCandidateJson> = payload.r_json();
 
-        println!("Candidates: {:?}", candidates_json_list);
         if let Some(peer_connection) = &self.peer_connection {
-            println!("SDP Answer being set: {}", offer_sdp);
             let desc = RTCSessionDescription::answer(offer_sdp)?;
             peer_connection.set_remote_description(desc).await?;
 
@@ -249,7 +262,7 @@ impl ezsockets::ClientExt for Client {
         &mut self,
         _frame: Option<ezsockets::CloseFrame>,
     ) -> Result<ezsockets::client::ClientCloseMode, ezsockets::Error> {
-        println!("FUCK! CLOSED!");
+        println!("CLOSED!");
         Ok(ezsockets::client::ClientCloseMode::Close)
     }
 }

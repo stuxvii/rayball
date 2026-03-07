@@ -7,9 +7,9 @@ pub struct BinaryEncoder {
 }
 
 impl BinaryEncoder {
-    pub fn new(capacity: usize, le: bool) -> Self {
+    pub fn new(le: bool) -> Self {
         Self {
-            data: Vec::with_capacity(capacity),
+            data: Vec::new(),
             le,
         }
     }
