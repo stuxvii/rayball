@@ -20,7 +20,7 @@ pub fn fetch_rooms(flag_texture: &Texture2D) -> Result<Vec<Room>, std::string::S
         Err(e) => return Err(format!("{}", e)),
     };
 
-    let mut decoder = BinaryDecoder::new(&response, false);
+    let mut decoder = BinaryDecoder::new(&response, true);
     let user_location = Vector2 {
         x: cfg_val!(LONGITUDE),
         y: cfg_val!(LATITUDE),
@@ -91,10 +91,7 @@ pub fn fetch_rooms(flag_texture: &Texture2D) -> Result<Vec<Room>, std::string::S
         decoder.set_position(next_entry_pos);
     }
 
-    rooms.sort_by(|a, b| {
-        a.distance_km
-            .partial_cmp(&b.distance_km)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    rooms.sort_by(|a, b| f64::total_cmp(&a.distance_km, &b.distance_km));
+
     Ok(rooms)
 }
