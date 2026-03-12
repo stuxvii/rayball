@@ -3,7 +3,7 @@ use raylib::{math::rrect, prelude::*, rgui::RaylibDrawGui};
 use crate::{FLAGS_SPRITESHEET, ICONS_SPRITESHEET, ProgramState, Screens, cfg::layout, net::join::{parse_code, request_room_join}, ui::{flags, state::AppState}};
 use crate::net::rooms;
 use crate::ui::primitives::Room;
-use tokio::{spawn, sync::mpsc::{self, channel}};
+use tokio::{sync::mpsc::{self}};
 
 pub fn thread_fetch(tx: mpsc::UnboundedSender<Result<Vec<Room>, String>>) {
     tokio::spawn(async move {
@@ -80,6 +80,10 @@ pub fn draw_menu(d: &mut RaylibDrawHandle, state: &mut AppState, screen_width:i3
         d.draw_texture_rec(tex, flags_rec, flag_position, raylib::color::Color::WHITE);
     }
 
+    // If you're looking at this code and can figure out how to make these lines cleaner, please make a pull
+    if d.is_key_pressed(KeyboardKey::KEY_ONE) { state.current_screen = Screens::ServerList; }
+    if d.is_key_pressed(KeyboardKey::KEY_TWO) { state.current_screen = Screens::Configuration; }
+
     match state.current_screen {
         Screens::ServerList => draw_server_list(d, state, screen_width, screen_height, dt),
         Screens::Configuration => draw_configuration(d, state, screen_width, screen_height),
@@ -94,14 +98,11 @@ fn draw_server_list(d: &mut RaylibDrawHandle, state: &mut AppState, screen_width
         match clip_r {
             Ok(s) => {
                 match parse_code(s) {
-                    Ok(c) => {
-                        let (tx, rx) = channel(100);
-                        state.join_task = Some(rx);
-                        spawn(async move {
+                    Ok(_c) => {
+                        /*Box::pin(async move {
                             println!("le joining room");
-                            let h: ezsockets::Client<crate::prelude::join::Client> = request_room_join(c).await.expect("yeah it errored out chief sorry");
-                            let _: Result<(), mpsc::error::SendError<ezsockets::Client<crate::prelude::join::Client>>> = tx.send(h).await;
-                        });
+                            let h: ezsockets::Client<crate::prelude::join::Client> = request_room_join(c, *state).await.expect("yeah it errored out chief sorry");
+                        });*/
                         
                         state.program_state = ProgramState::Joining;
                     }
@@ -203,8 +204,8 @@ fn draw_server_list(d: &mut RaylibDrawHandle, state: &mut AppState, screen_width
             };
         }
 
-        if let Some(id) = join_id {
-            let _ = request_room_join(id);
+        if let Some(_id) = join_id {
+            // let _ = request_room_join(id, *state);
             state.program_state = ProgramState::Joining;
         }
 

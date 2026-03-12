@@ -30,6 +30,9 @@ http = "1.4.0"
 tracing-subscriber = "0.3.22"
 zune-core = "0.5.1"
 flate2 = "1.1.9"
+strum = "0.28.0"
+strum_macros = "0.28.0"
+hex = "0.4.3"
 
 [profile.release]
 opt-level = "z"

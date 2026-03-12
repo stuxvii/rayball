@@ -1,18 +1,17 @@
-use ezsockets::Client;
 use raylib::prelude::*;
 use clipboard_rs::ClipboardContext;
+use webrtc::peer_connection::RTCPeerConnection;
 use crate::net::xcoder::BinaryEncoder;
 use crate::ui::primitives::{Room, SettingData};
 use crate::*;
 use std::collections::HashMap;
-use std::task::Context;
-use tokio::sync::mpsc::{self, Receiver};
+use tokio::sync::mpsc;
 
 pub struct NavIcon {
     pub rect: Rectangle,
     pub screen: Screens,
 }
-pub struct AppState<'a> {
+pub struct AppState {
     pub navbar_buttons: Vec<NavIcon>,
     pub setting_toggles: Vec<SettingData>,
     pub errors: Vec<Alert>,
@@ -29,17 +28,18 @@ pub struct AppState<'a> {
     pub text_widths: HashMap<&'static str, i32>,
     pub tx: mpsc::UnboundedSender<Result<Vec<Room>, String>>,
     pub rx: mpsc::UnboundedReceiver<Result<Vec<Room>, String>>,
-    pub cx: Context<'a>,
     pub clipboard_ctx: ClipboardContext,
     pub program_state: ProgramState,
     pub state: BinaryEncoder,
-    pub ws_client: Option<Client<crate::net::join::Client>>,
-    pub join_task: Option<Receiver<Client<net::join::Client>>>,
     pub logo_letter_amp_timer: f32,
     pub logo_letter_amp_tween: raylib::ease::Tween,
+    pub ro_datachannel: Option<Arc<webrtc::data_channel::RTCDataChannel>>,
+    pub ru_datachannel: Option<Arc<webrtc::data_channel::RTCDataChannel>>,
+    pub uu_datachannel: Option<Arc<webrtc::data_channel::RTCDataChannel>>,
+    pub peer_connection: Option<Arc<RTCPeerConnection>>,
 }
 
-impl AppState<'_> {
+impl AppState {
     pub fn push_error(&mut self, text: String, fade: bool) {
         self.errors.push(Alert::new(text, fade));
     }

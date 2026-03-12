@@ -1,27 +1,25 @@
 use crate::net::xcoder::{BinaryDecoder, BinaryEncoder};
+use crate::ui::state::AppState;
 use async_trait::async_trait;
 use ezsockets::ClientConfig;
 use flate2::write::DeflateEncoder;
 use flate2::{Compression, read::DeflateDecoder};
 use std::io::Read;
 use std::{collections::HashMap, error::Error, io::Write, sync::Arc};
-use tokio::sync::{Mutex, MutexGuard, mpsc};
+use tokio::sync::{Mutex, MutexGuard};
 use url::Url;
+use webrtc::data_channel::data_channel_init::RTCDataChannelInit;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 use webrtc::{
     api::{APIBuilder, media_engine::MediaEngine},
-    data_channel::data_channel_init::RTCDataChannelInit,
-    ice_transport::{
-        ice_candidate::RTCIceCandidateInit, ice_gatherer_state::RTCIceGathererState,
-        ice_server::RTCIceServer,
-    },
+    ice_transport::{ice_candidate::RTCIceCandidateInit, ice_server::RTCIceServer},
     peer_connection::configuration::RTCConfiguration,
 };
 
 pub struct Client {
     handle: ezsockets::Client<Self>,
-    peer_connection: Option<Arc<webrtc::peer_connection::RTCPeerConnection>>,
+    state: AppState,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -62,109 +60,145 @@ fn compress_signal_packet(op_code: u8, payload_buffer: &[u8]) -> Vec<u8> {
     packet
 }
 
+async fn rtc_offer_shenanigans() -> Result<
+    (
+        Arc<webrtc::peer_connection::RTCPeerConnection>,
+        Arc<Mutex<Vec<RTCIceCandidateInit>>>,
+        Arc<webrtc::data_channel::RTCDataChannel>,
+        Arc<webrtc::data_channel::RTCDataChannel>,
+        Arc<webrtc::data_channel::RTCDataChannel>,
+    ),
+    Box<dyn Error + Send + std::marker::Sync>,
+> {
+    let config: RTCConfiguration = RTCConfiguration {
+        ice_servers: vec![RTCIceServer {
+            urls: vec!["stun:stun.l.google.com:19302".to_string()],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let api: webrtc::api::API = APIBuilder::new()
+        .with_media_engine(MediaEngine::default())
+        .build();
+
+    let peer_connection: Arc<webrtc::peer_connection::RTCPeerConnection> =
+        Arc::new(api.new_peer_connection(config).await?);
+
+    let candidates = Arc::new(Mutex::new(Vec::new()));
+    let c_clone = Arc::clone(&candidates);
+
+    peer_connection.on_ice_candidate(Box::new(move |candidate| {
+        let c_clone = Arc::clone(&c_clone);
+        Box::pin(async move {
+            if let Some(cand) = candidate {
+                if let Ok(json) = cand.to_json() {
+                    c_clone.lock().await.push(json);
+                }
+            }
+        })
+    }));
+
+    // Register data channels
+    let ro = peer_connection.create_data_channel("ro", None).await?;
+    let ru = peer_connection
+        .create_data_channel(
+            "ru",
+            Some(RTCDataChannelInit {
+                ordered: Some(false),
+                max_retransmits: Some(1),
+                ..Default::default()
+            }),
+        )
+        .await?;
+    let uu = peer_connection
+        .create_data_channel(
+            "uu",
+            Some(RTCDataChannelInit {
+                ordered: Some(false),
+                max_retransmits: Some(0),
+                ..Default::default()
+            }),
+        )
+        .await?;
+
+    let offer = peer_connection.create_offer(None).await?;
+    peer_connection.set_local_description(offer.clone()).await?;
+
+    let mut gather_complete = peer_connection.gathering_complete_promise().await;
+    gather_complete.recv().await;
+
+    Ok((peer_connection, candidates, ro, ru, uu))
+}
+
 #[async_trait]
 impl ezsockets::ClientExt for Client {
     type Call = Vec<u8>;
 
     async fn on_connect(&mut self) -> Result<(), ezsockets::Error> {
-        let config: RTCConfiguration = RTCConfiguration {
-            ice_servers: vec![RTCIceServer {
-                urls: vec!["stun:stun.l.google.com:19302".to_string()],
-                ..Default::default()
-            }],
-            ..Default::default()
-        };
-        let api: webrtc::api::API = APIBuilder::new()
-            .with_media_engine(MediaEngine::default())
-            .build();
-        let peer_connection: Arc<webrtc::peer_connection::RTCPeerConnection> =
-            Arc::new(api.new_peer_connection(config).await?);
+        let result: (
+            Arc<webrtc::peer_connection::RTCPeerConnection>,
+            Arc<Mutex<Vec<RTCIceCandidateInit>>>,
+            Arc<webrtc::data_channel::RTCDataChannel>,
+            Arc<webrtc::data_channel::RTCDataChannel>,
+            Arc<webrtc::data_channel::RTCDataChannel>,
+        ) = rtc_offer_shenanigans().await?;
 
-        let (done_tx, mut done_rx) = mpsc::channel::<()>(1);
+        let (peer_connection, candidates) = (result.0, result.1);
+        self.state.ro_datachannel = Some(result.2);
+        self.state.ru_datachannel = Some(result.3);
+        self.state.uu_datachannel = Some(result.4);
+        self.state.peer_connection = Some(peer_connection);
 
-        let candidates = Arc::new(Mutex::new(Vec::new()));
-        let c_clone = Arc::clone(&candidates);
+        if let None = self.state.uu_datachannel {
+            return Err("UU DataChannel was not initialized.".into());
+        }
+        if let None = self.state.ru_datachannel {
+            return Err("RU DataChannel was not initialized.".into());
+        }
+        if let None = self.state.ro_datachannel {
+            return Err("RO DataChannel was not initialized.".into());
+        }
 
-        peer_connection.on_ice_candidate(Box::new(move |candidate| {
-            let c_clone = Arc::clone(&c_clone);
-            Box::pin(async move {
-                if let Some(cand) = candidate {
-                    if let Ok(json) = cand.to_json() {
-                        c_clone.lock().await.push(json);
-                    }
-                }
-            })
-        }));
+        let uu_datachanel = self.state.uu_datachannel.as_mut().unwrap();
+        let ru_datachanel = self.state.ru_datachannel.as_mut().unwrap();
+        let ro_datachanel = self.state.ro_datachannel.as_mut().unwrap();
 
-        peer_connection.on_ice_gathering_state_change(Box::new(move |state| {
-            let done_tx = done_tx.clone();
-            Box::pin(async move {
-                if state == RTCIceGathererState::Complete {
-                    let _ = done_tx.send(()).await;
-                }
-            })
-        }));
-
-        peer_connection.gathering_complete_promise().await;
-
-        let dc_ro = peer_connection.create_data_channel("ro", None).await?;
-        let dc_uu = peer_connection
-            .create_data_channel(
-                "uu",
-                Some(RTCDataChannelInit {
-                    ordered: Some(false),
-                    max_retransmits: Some(0),
-                    ..Default::default()
-                }),
-            )
-            .await?;
-        let dc_ru = peer_connection
-            .create_data_channel(
-                "ru",
-                Some(RTCDataChannelInit {
-                    ordered: Some(false),
-                    max_retransmits: Some(1),
-                    ..Default::default()
-                }),
-            )
-            .await?;
-
-        let dc_uu_label = dc_uu.label().to_owned();
-        dc_uu.on_open(Box::new(move || {
+        let dc_uu_label = uu_datachanel.label().to_owned();
+        uu_datachanel.on_open(Box::new(move || {
             println!("Data channel {dc_uu_label} is now open!!!");
             Box::pin(async {})
         }));
 
-        dc_uu.on_message(Box::new(move |msg| {
+        uu_datachanel.on_message(Box::new(move |msg| {
             let payload = String::from_utf8_lossy(&msg.data);
             println!("Received message: {}", payload);
             Box::pin(async {})
         }));
 
-        let dc_ru_label = dc_ru.label().to_owned();
-        dc_ru.on_open(Box::new(move || {
+        let dc_ru_label = ru_datachanel.label().to_owned();
+        ru_datachanel.on_open(Box::new(move || {
             println!("Data channel {dc_ru_label} is now open!!!");
             Box::pin(async {})
         }));
 
-        dc_ru.on_message(Box::new(move |msg| {
+        ru_datachanel.on_message(Box::new(move |msg| {
             let payload = String::from_utf8_lossy(&msg.data);
             println!("Received message: {}", payload);
             Box::pin(async {})
         }));
 
-        let dc_ro_label = dc_ro.label().to_owned();
-        let dc_clone = Arc::clone(&dc_ro);
-        dc_ro.on_open(Box::new(move || {
+        let dc_ro_label = ro_datachanel.label().to_owned();
+        let dc_clone = Arc::clone(&ro_datachanel);
+        ro_datachanel.on_open(Box::new(move || {
             println!("Data channel {dc_ro_label} is now open!");
             Box::pin(async move {})
         }));
 
-        dc_ro.on_message(Box::new(move |msg| {
+        ro_datachanel.on_message(Box::new(move |msg| {
             let payload = String::from_utf8_lossy(&msg.data);
             let dc_clone = Arc::clone(&dc_clone);
             println!("Received message: {}", payload);
-            Box::pin(async {
+            Box::pin(async move {
                 let mut user_info = BinaryEncoder::new(false);
                 user_info.w_str(&cfg_val!(USERNAME));
                 user_info.w_str(&cfg_val!(COUNTRY));
@@ -179,46 +213,36 @@ impl ezsockets::ClientExt for Client {
                 // cryptography_data.append_bytes(crypto_challenge.bytes()) // append_byte doesnt manage specifying the length of the added data, must manage that ourselves
                 // Then just write all that.
                 // And write the length of the user_info along with the user info.
-                data.w_u8(user_info.bytes().len() as u8);
-                data.append_bytes(user_info.bytes());
+                // data.w_u8(user_info.bytes().len() as u8);
+                // data.append_bytes(user_info.bytes());
 
-                // let data = bytes::Bytes::copy_from_slice(data.bytes());
+                let data = bytes::Bytes::copy_from_slice(data.bytes());
                 // println!("Sending player data through dc_{dc_ro_label}");
-                // if let Err(e) = dc_clone.send(&data).await {println!("Failed to send player data: {:?}", e)}
+                if let Err(e) = dc_clone.send(&data).await {println!("Failed to send player data: {:?}", e)}
             })
         }));
 
-        let offer = peer_connection.create_offer(None).await?;
-        peer_connection.set_local_description(offer.clone()).await?;
-        
-        let final_sdp = peer_connection.local_description().await.ok_or("No local description")?;
-        let offer_sdp: String = final_sdp.sdp;
+        if let Some(p) = &self.state.peer_connection {
+            let final_sdp: RTCSessionDescription =
+                p.local_description().await.ok_or("No local description")?;
+            let offer_sdp: String = final_sdp.sdp;
 
-        self.peer_connection = Some(peer_connection);
-        let _ = done_rx.recv().await;
+            let final_candidates: MutexGuard<'_, Vec<RTCIceCandidateInit>> =
+                candidates.lock().await;
 
-        let final_candidates: MutexGuard<'_, Vec<RTCIceCandidateInit>> = candidates.lock().await;
-        let json_string: String = serde_json::to_string(&*final_candidates)?;
+            let mut payload: BinaryEncoder = BinaryEncoder::new(true);
+            payload.w_u8(0x00);
+            payload.w_str(&offer_sdp);
+            payload.w_json(&*final_candidates);
+            payload.w_u16(0x0900);
+            payload.w_u8(0x00);
 
-        let mut payload: BinaryEncoder = BinaryEncoder::new(true);
-        payload.w_u8(0x00);
-        payload.w_str(&offer_sdp);
-        payload.w_str(&json_string);
-        payload.w_u16(0x0900);
-        payload.w_u8(0x00);
+            self.handle.binary(compress_signal_packet(1, &payload.data)).unwrap();
 
-        let bytes = &payload.data;
-        for byte in bytes {
-            print!("{:02x}", byte);
+            Ok(())
+        } else {
+            Err("Something went Exceptionally Wrong!".into())
         }
-        print!("\n");
-
-        // return Ok(());
-
-        let data = compress_signal_packet(1, &payload.data);
-        self.handle.binary(data).unwrap();
-
-        Ok(())
     }
 
     async fn on_text(&mut self, text: ezsockets::Utf8Bytes) -> Result<(), ezsockets::Error> {
@@ -228,12 +252,12 @@ impl ezsockets::ClientExt for Client {
 
     async fn on_binary(&mut self, bytes: ezsockets::Bytes) -> Result<(), ezsockets::Error> {
         let decoded_bytes = decode_signal_packet(&bytes);
-
         let mut payload = BinaryDecoder::new(&decoded_bytes.1, false);
         let offer_sdp = payload.r_str();
+        println!("{}", offer_sdp);
         let candidates_json_list: Vec<IceCandidateJson> = payload.r_json();
 
-        if let Some(peer_connection) = &self.peer_connection {
+        if let Some(peer_connection) = &self.state.peer_connection {
             let desc = RTCSessionDescription::answer(offer_sdp)?;
             peer_connection.set_remote_description(desc).await?;
 
@@ -267,24 +291,21 @@ impl ezsockets::ClientExt for Client {
     }
 }
 
-pub async fn request_room_join(code: String) -> Result<ezsockets::Client<Client>, String> {
+pub async fn request_room_join(
+    code: String,
+    state: AppState,
+) -> Result<ezsockets::Client<Client>, String> {
     let rq: ClientConfig =
         ClientConfig::new(format!("wss://p2p.haxball.com/client?id={}", code).as_str())
             // ehh good enough
             .header(
                 "User-agent",
-                "Mozilla/5.0 (raylib; Linux x86_64; rv:147.0) HaxBall Rayball Client",
+                "Mozilla/5.0 (X11; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0", // "Mozilla/5.0 (raylib; Linux x86_64; rv:147.0) HaxBall Rayball Client",
             )
+            .header("Host", "p2p.haxball.com")
             .header("Origin", "https://www.haxball.com");
 
-    let (handle, future) = ezsockets::connect(
-        |h| Client {
-            handle: h,
-            peer_connection: None,
-        },
-        rq,
-    )
-    .await;
+    let (handle, future) = ezsockets::connect(|h| Client { handle: h, state }, rq).await;
     tokio::spawn(async move {
         if let Err(e) = future.await {
             eprintln!("Connection closed: {e}");

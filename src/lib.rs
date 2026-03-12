@@ -1,8 +1,14 @@
+use crate::cfg::config::*;
 use chrono::Local;
 use raylib::prelude::*;
 use serde_json::Value;
-use std::{collections::{BTreeMap}, fs, sync::{OnceLock, atomic::AtomicBool}};
-use crate::cfg::config::*;
+use std::{
+    collections::BTreeMap,
+    fs,
+    sync::{Arc, LazyLock, OnceLock, atomic::AtomicBool},
+    u8,
+};
+use tokio::sync::Mutex;
 
 pub static ICONS_SPRITESHEET: OnceLock<Texture2D> = OnceLock::new();
 pub static FLAGS_SPRITESHEET: OnceLock<Texture2D> = OnceLock::new();
@@ -10,7 +16,10 @@ pub static FLAGS_SPRITESHEET: OnceLock<Texture2D> = OnceLock::new();
 /// Maximum length of the player name string.
 pub const MAX_NAME_LENGTH: usize = 25;
 
-pub fn load_spritesheets(rl: &mut RaylibHandle, thread: &RaylibThread) -> Result<(), Box<dyn std::error::Error>> {
+pub fn load_spritesheets(
+    rl: &mut RaylibHandle,
+    thread: &RaylibThread,
+) -> Result<(), Box<dyn std::error::Error>> {
     let icons_sp_file = include_bytes!("./res/img/icons.png");
     let icons_im_data = Image::load_image_from_mem(".png", icons_sp_file)?;
     let flags_sp_file = include_bytes!("./res/img/flags.png");
@@ -26,18 +35,21 @@ pub fn load_spritesheets(rl: &mut RaylibHandle, thread: &RaylibThread) -> Result
     Ok(())
 }
 
-
 #[macro_export]
 macro_rules! cfg_val {
-    ($field:ident) => { *crate::cfg::config::$field.lock().unwrap() };
-    (atomget $field:ident) => { 
-        crate::cfg::config::$field.load(std::sync::atomic::Ordering::Relaxed) 
+    ($field:ident) => {
+        *crate::cfg::config::$field.lock().unwrap()
+    };
+    (atomget $field:ident) => {
+        crate::cfg::config::$field.load(std::sync::atomic::Ordering::Relaxed)
     };
 }
 
 #[macro_export]
 macro_rules! clr_val {
-    ($field:ident) => { *crate::cfg::style::$field.lock().unwrap() };
+    ($field:ident) => {
+        *crate::cfg::style::$field.lock().unwrap()
+    };
 }
 
 fn atomset(a: &AtomicBool, y: bool) {
@@ -61,7 +73,7 @@ pub fn generate_checkerboard(rl: &mut RaylibHandle, rt: &RaylibThread) -> Textur
 
     let bg_color1 = rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BASE_COLOR_NORMAL);
     let bg_color2 = rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BORDER_COLOR_NORMAL);
-    
+
     image.draw_line_ex(
         Vector2 {
             x: image_size_f,
@@ -99,18 +111,48 @@ pub fn generate_checkerboard(rl: &mut RaylibHandle, rt: &RaylibThread) -> Textur
 pub fn save_config() {
     let mut map = BTreeMap::new();
 
-    map.insert("scrolling_bg".to_string(), Value::from(cfg_val!(atomget SCROLLING_BACKGROUND)));
-    map.insert("fancy_cursor".to_string(), Value::from(cfg_val!(atomget FANCY_CURSOR)));
-    map.insert("show_fps".to_string(), Value::from(cfg_val!(atomget SHOW_FPS)));
-    map.insert("military_time".to_string(), Value::from(cfg_val!(atomget MILITARY_TIME)));
-    map.insert("auto_fetch".to_string(), Value::from(cfg_val!(atomget AUTO_FETCH)));
-    map.insert("skip_title".to_string(), Value::from(cfg_val!(atomget SKIP_TITLE)));
-    
-    map.insert("username".to_string(), Value::from(cfg_val!(USERNAME).as_str()));
-    map.insert("country".to_string(), Value::from(cfg_val!(COUNTRY).as_str()));
+    map.insert(
+        "scrolling_bg".to_string(),
+        Value::from(cfg_val!(atomget SCROLLING_BACKGROUND)),
+    );
+    map.insert(
+        "fancy_cursor".to_string(),
+        Value::from(cfg_val!(atomget FANCY_CURSOR)),
+    );
+    map.insert(
+        "show_fps".to_string(),
+        Value::from(cfg_val!(atomget SHOW_FPS)),
+    );
+    map.insert(
+        "military_time".to_string(),
+        Value::from(cfg_val!(atomget MILITARY_TIME)),
+    );
+    map.insert(
+        "auto_fetch".to_string(),
+        Value::from(cfg_val!(atomget AUTO_FETCH)),
+    );
+    map.insert(
+        "skip_title".to_string(),
+        Value::from(cfg_val!(atomget SKIP_TITLE)),
+    );
+
+    map.insert(
+        "username".to_string(),
+        Value::from(cfg_val!(USERNAME).as_str()),
+    );
+    map.insert(
+        "country".to_string(),
+        Value::from(cfg_val!(COUNTRY).as_str()),
+    );
     map.insert("avatar".to_string(), Value::from(cfg_val!(AVATAR).as_str()));
-    map.insert("longitude".to_string(), Value::from(cfg_val!(LONGITUDE) as f64));
-    map.insert("latitude".to_string(), Value::from(cfg_val!(LATITUDE) as f64));
+    map.insert(
+        "longitude".to_string(),
+        Value::from(cfg_val!(LONGITUDE) as f64),
+    );
+    map.insert(
+        "latitude".to_string(),
+        Value::from(cfg_val!(LATITUDE) as f64),
+    );
     map.insert("fps".to_string(), Value::from(cfg_val!(FPS) as f64));
 
     if let Ok(json_string) = serde_json::to_string_pretty(&map) {
@@ -124,30 +166,48 @@ pub fn load_settings() -> Result<(), Box<dyn std::error::Error>> {
 
     let map = json.as_object().ok_or("Config is not a JSON object")?;
 
-    let get_bool = |key: &str| -> Option<bool> {
-        map.get(key)?.as_bool()
-    };
+    let get_bool = |key: &str| -> Option<bool> { map.get(key)?.as_bool() };
 
-    let get_str = |key: &str| -> Option<String> {
-        map.get(key)?.as_str().map(|s| s.to_owned())
-    };
+    let get_str = |key: &str| -> Option<String> { map.get(key)?.as_str().map(|s| s.to_owned()) };
 
-    let get_num = |key: &str| -> Option<f64> {
-        map.get(key)?.as_f64()
-    };
-    
-    if let Some(v) = get_bool("scrolling_bg")  {atomset(&SCROLLING_BACKGROUND, v);}
-    if let Some(v) = get_bool("fancy_cursor")  {atomset(&FANCY_CURSOR, v);}
-    if let Some(v) = get_bool("show_fps")      {atomset(&SHOW_FPS, v);}
-    if let Some(v) = get_bool("military_time") {atomset(&MILITARY_TIME, v);}
-    if let Some(v) = get_bool("auto_fetch")    {atomset(&AUTO_FETCH, v);}
-    if let Some(v) = get_bool("skip_title")    {atomset(&SKIP_TITLE, v);}
-    if let Some(v) = get_str("username")     {cfg_val!(USERNAME) = v; }
-    if let Some(v) = get_str("country")      {cfg_val!(COUNTRY) = v; }
-    if let Some(v) = get_str("avatar")      {cfg_val!(AVATAR) = v; }
-    if let Some(v) = get_num("longitude")       {cfg_val!(LONGITUDE) = v as f32; }
-    if let Some(v) = get_num("latitude")        {cfg_val!(LATITUDE) = v as f32; }
-    if let Some(v) = get_num("fps")             {cfg_val!(FPS) = v as u32; }
+    let get_num = |key: &str| -> Option<f64> { map.get(key)?.as_f64() };
+
+    if let Some(v) = get_bool("scrolling_bg") {
+        atomset(&SCROLLING_BACKGROUND, v);
+    }
+    if let Some(v) = get_bool("fancy_cursor") {
+        atomset(&FANCY_CURSOR, v);
+    }
+    if let Some(v) = get_bool("show_fps") {
+        atomset(&SHOW_FPS, v);
+    }
+    if let Some(v) = get_bool("military_time") {
+        atomset(&MILITARY_TIME, v);
+    }
+    if let Some(v) = get_bool("auto_fetch") {
+        atomset(&AUTO_FETCH, v);
+    }
+    if let Some(v) = get_bool("skip_title") {
+        atomset(&SKIP_TITLE, v);
+    }
+    if let Some(v) = get_str("username") {
+        cfg_val!(USERNAME) = v;
+    }
+    if let Some(v) = get_str("country") {
+        cfg_val!(COUNTRY) = v;
+    }
+    if let Some(v) = get_str("avatar") {
+        cfg_val!(AVATAR) = v;
+    }
+    if let Some(v) = get_num("longitude") {
+        cfg_val!(LONGITUDE) = v as f32;
+    }
+    if let Some(v) = get_num("latitude") {
+        cfg_val!(LATITUDE) = v as f32;
+    }
+    if let Some(v) = get_num("fps") {
+        cfg_val!(FPS) = v as u32;
+    }
 
     cfg_val!(USERNAME).truncate(24);
     cfg_val!(COUNTRY).truncate(2);
@@ -183,18 +243,23 @@ pub mod cfg {
         pub static LATITUDE: Mutex<f32> = Mutex::new(-32.5323);
         pub static LONGITUDE: Mutex<f32> = Mutex::new(-68.5040);
         pub static USERNAME: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("".to_string()));
-        pub static COUNTRY: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("ar".to_string()));
+        pub static COUNTRY: LazyLock<Mutex<String>> =
+            LazyLock::new(|| Mutex::new("ar".to_string()));
         pub static AVATAR: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("<3".to_string()));
     }
 
     pub mod style {
-        use std::sync::{LazyLock, Mutex};
         use raylib::color::Color;
+        use std::sync::{LazyLock, Mutex};
 
-        pub static ENABLED_COLOR:  LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("00AA00").expect("Invalid hex")));
-        pub static PRIMARY_COLOR:  LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("f2ffee").expect("Invalid hex")));
-        pub static SECONDARY_COLOR:LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("000000").expect("Invalid hex")));
-        pub static TERNARY_COLOR:  LazyLock<Mutex<Color>> = LazyLock::new(|| Mutex::new(Color::from_hex("BABABA").expect("Invalid hex")));
+        pub static ENABLED_COLOR: LazyLock<Mutex<Color>> =
+            LazyLock::new(|| Mutex::new(Color::from_hex("00AA00").expect("Invalid hex")));
+        pub static PRIMARY_COLOR: LazyLock<Mutex<Color>> =
+            LazyLock::new(|| Mutex::new(Color::from_hex("f2ffee").expect("Invalid hex")));
+        pub static SECONDARY_COLOR: LazyLock<Mutex<Color>> =
+            LazyLock::new(|| Mutex::new(Color::from_hex("000000").expect("Invalid hex")));
+        pub static TERNARY_COLOR: LazyLock<Mutex<Color>> =
+            LazyLock::new(|| Mutex::new(Color::from_hex("BABABA").expect("Invalid hex")));
     }
 }
 
@@ -213,16 +278,16 @@ impl From<usize> for ProgramState {
             1 => Self::Joining,
             2 => Self::InGame,
             3 => Self::AskInfo,
-            _ => Self::Menu
+            _ => Self::Menu,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, strum_macros::EnumIter)]
 pub enum Screens {
     ServerList = 0,
     Configuration = 1,
-    GithubLink = 2,
+    GithubLink = u8::MAX as isize,
 }
 
 impl From<usize> for Screens {
@@ -230,47 +295,47 @@ impl From<usize> for Screens {
         match value {
             0 => Self::ServerList,
             1 => Self::Configuration,
-            _ => Self::ServerList
+            _ => Self::ServerList,
         }
     }
 }
 
-pub struct Alert { 
+pub struct Alert {
     pub text: String,
     pub fade: bool,
-    pub creation: i64 
+    pub creation: i64,
 }
 impl Alert {
     pub fn new(text: String, fade: bool) -> Alert {
         Alert {
             text,
             fade,
-            creation: Local::now().timestamp()
+            creation: Local::now().timestamp(),
         }
     }
 }
 pub mod ui {
     pub mod cursor;
-    pub mod primitives;
-    pub mod title;
-    pub mod state;
     pub mod flags;
-    pub mod menu;
     pub mod ingame;
     pub mod joining;
+    pub mod menu;
+    pub mod primitives;
+    pub mod state;
+    pub mod title;
 }
 
 pub mod net {
-    pub mod rooms;
-    pub mod join;
     pub mod idkey;
+    pub mod join;
+    pub mod rooms;
     pub mod xcoder;
 }
 
 pub mod prelude {
-    pub use crate::net::*;
-    pub use crate::ui::*;
     pub use crate::cfg::config::*;
     pub use crate::cfg::layout::*;
     pub use crate::cfg::style::*;
+    pub use crate::net::*;
+    pub use crate::ui::*;
 }

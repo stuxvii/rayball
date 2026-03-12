@@ -7,9 +7,9 @@ use rayball_rs::net::join::request_room_join;
 use rayball_rs::net::xcoder::BinaryEncoder;
 use rayball_rs::ui::cursor::CursorTrail;
 use rayball_rs::ui::joining;
-use rayball_rs::ui::{menu, title};
 use rayball_rs::ui::primitives::{Room, SettingData};
 use rayball_rs::ui::state::{AppState, NavIcon};
+use rayball_rs::ui::{menu, title};
 use rayball_rs::*;
 use raylib::ease::Tween;
 use raylib::error::Error;
@@ -40,20 +40,6 @@ async fn main() -> Result<(), Error> {
         }
     }
 
-    let args: Vec<String> = std::env::args().collect();
-    
-    if let Some(code) = args.get(1) {
-        match request_room_join(code.to_string()).await {
-            Ok(_) => {
-                println!("Waiting for messages (Ctrl+C to exit)...");
-                tokio::signal::ctrl_c().await.unwrap();
-                println!("Exiting...");
-            },
-            Err(e) => println!("Connection failed: {e}"),
-        }
-        return Ok(());
-    }
-
     let program_name = "RayBall";
     let (mut rl, rt) = raylib::init()
         .resizable()
@@ -69,7 +55,8 @@ async fn main() -> Result<(), Error> {
         get_gui_color(rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BASE_COLOR_NORMAL));
     clr_val!(PRIMARY_COLOR) =
         get_gui_color(rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::TEXT_COLOR_NORMAL));
-    clr_val!(TERNARY_COLOR) = get_gui_color(rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BORDER_COLOR_NORMAL),
+    clr_val!(TERNARY_COLOR) = get_gui_color(
+        rl.gui_get_style(GuiControl::DEFAULT, GuiControlProperty::BORDER_COLOR_NORMAL),
     );
 
     match load_spritesheets(&mut rl, &rt) {
@@ -88,9 +75,6 @@ async fn main() -> Result<(), Error> {
         rl.hide_cursor();
     }
 
-    let waker = noop_waker_ref();
-    let cx: Context<'_> = Context::from_waker(waker);
-
     let mut bg_scroll: f32 = 0.0;
     let bg_scroll_speed: f32 = 32.;
 
@@ -101,12 +85,31 @@ async fn main() -> Result<(), Error> {
 
     let mut state: AppState = AppState {
         navbar_buttons: vec![
-            NavIcon { rect: rrect(0.0, 0.0, 11.0, 11.0), screen: Screens::ServerList },
-            NavIcon { rect: rrect(11.0, 0.0, 11.0, 11.0), screen: Screens::Configuration },
-            NavIcon { rect: rrect(44.0, 0.0, 11.0, 11.0), screen: Screens::GithubLink },
+            NavIcon {
+                rect: rrect(0.0, 0.0, 11.0, 11.0),
+                screen: Screens::ServerList,
+            },
+            NavIcon {
+                rect: rrect(11.0, 0.0, 11.0, 11.0),
+                screen: Screens::Configuration,
+            },
+            NavIcon {
+                rect: rrect(44.0, 0.0, 11.0, 11.0),
+                screen: Screens::GithubLink,
+            },
         ],
         setting_toggles: vec![
-            SettingData::new("Fancy Cursor".to_string(), &FANCY_CURSOR, Some(|on, d| { if on { d.hide_cursor(); } else { d.show_cursor(); } })),
+            SettingData::new(
+                "Fancy Cursor".to_string(),
+                &FANCY_CURSOR,
+                Some(|on, d| {
+                    if on {
+                        d.hide_cursor();
+                    } else {
+                        d.show_cursor();
+                    }
+                }),
+            ),
             SettingData::new("Scrolling BG".to_string(), &SCROLLING_BACKGROUND, None),
             SettingData::new("Show FPS".to_string(), &SHOW_FPS, None),
             SettingData::new("24H Clock".to_string(), &MILITARY_TIME, None),
@@ -132,15 +135,34 @@ async fn main() -> Result<(), Error> {
         ]),
         tx,
         rx,
-        cx,
-        ws_client: None,
-        join_task: None,
         clipboard_ctx: ClipboardContext::new().unwrap(),
-        program_state: if cfg_val!(atomget SKIP_TITLE) { ProgramState::Menu } else { ProgramState::AskInfo },
+        program_state: if cfg_val!(atomget SKIP_TITLE) {
+            ProgramState::Menu
+        } else {
+            ProgramState::AskInfo
+        },
         state: BinaryEncoder::new(true),
         logo_letter_amp_timer: 0.,
         logo_letter_amp_tween: Tween::new(ease::circ_out, 32., 4., 200.),
+        ro_datachannel: None,
+        ru_datachannel: None,
+        uu_datachannel: None,
+        peer_connection: None,
     };
+
+    let args: Vec<String> = std::env::args().collect();
+
+    if let Some(code) = args.get(1) {
+        match request_room_join(code.to_string(), state).await {
+            Ok(_) => {
+                println!("Waiting for messages (Ctrl+C to exit)...");
+                tokio::signal::ctrl_c().await.unwrap();
+                println!("Exiting...");
+            }
+            Err(e) => println!("Connection failed: {e}"),
+        }
+        return Ok(());
+    }
 
     while !rl.window_should_close() {
         let mut d: RaylibDrawHandle<'_> = rl.begin_drawing(&rt);
@@ -169,14 +191,27 @@ async fn main() -> Result<(), Error> {
 
         match state.program_state {
             ProgramState::Menu => {
-                d.draw_rectangle(0, 0, screen_width, layout::BUTTON_HEIGHT as i32, clr_val!(SECONDARY_COLOR));
+                d.draw_rectangle(
+                    0,
+                    0,
+                    screen_width,
+                    layout::BUTTON_HEIGHT as i32,
+                    clr_val!(SECONDARY_COLOR),
+                );
                 menu::draw_menu(&mut d, &mut state, screen_width, screen_height, dt);
             }
             ProgramState::Joining => {
                 joining::draw_joining(&mut d, &mut state, screen_width, screen_height);
             }
             ProgramState::AskInfo => {
-                title::draw_ask_info(&mut d, &mut state, program_name, screen_width, screen_height, dt);
+                title::draw_ask_info(
+                    &mut d,
+                    &mut state,
+                    program_name,
+                    screen_width,
+                    screen_height,
+                    dt,
+                );
             }
             _ => (),
         }
