@@ -12,7 +12,7 @@ use webrtc::data_channel::data_channel_init::RTCDataChannelInit;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 use webrtc::{
-    api::{APIBuilder, media_engine::MediaEngine},
+    api::APIBuilder,
     ice_transport::{ice_candidate::RTCIceCandidateInit, ice_server::RTCIceServer},
     peer_connection::configuration::RTCConfiguration,
 };
@@ -78,7 +78,6 @@ async fn rtc_offer_shenanigans() -> Result<
         ..Default::default()
     };
     let api: webrtc::api::API = APIBuilder::new()
-        .with_media_engine(MediaEngine::default())
         .build();
 
     let peer_connection: Arc<webrtc::peer_connection::RTCPeerConnection> =
@@ -122,7 +121,7 @@ async fn rtc_offer_shenanigans() -> Result<
         .await?;
 
     let offer = peer_connection.create_offer(None).await?;
-    peer_connection.set_local_description(offer.clone()).await?;
+    peer_connection.set_local_description(offer).await?;
 
     let mut gather_complete = peer_connection.gathering_complete_promise().await;
     gather_complete.recv().await;
@@ -225,8 +224,8 @@ impl ezsockets::ClientExt for Client {
         if let Some(p) = &self.state.peer_connection {
             let final_sdp: RTCSessionDescription =
                 p.local_description().await.ok_or("No local description")?;
+                println!("{}", final_sdp.sdp);
             let offer_sdp: String = final_sdp.sdp;
-
             let final_candidates: MutexGuard<'_, Vec<RTCIceCandidateInit>> =
                 candidates.lock().await;
 
@@ -234,8 +233,8 @@ impl ezsockets::ClientExt for Client {
             payload.w_u8(0x00);
             payload.w_str(&offer_sdp);
             payload.w_json(&*final_candidates);
-            payload.w_u16(0x0900);
-            payload.w_u8(0x00);
+            payload.w_u16(0x0900); // version
+            payload.w_nullable_str(None);
 
             self.handle.binary(compress_signal_packet(1, &payload.data)).unwrap();
 
