@@ -4,6 +4,10 @@ use async_trait::async_trait;
 use ezsockets::ClientConfig;
 use flate2::write::DeflateEncoder;
 use flate2::{Compression, read::DeflateDecoder};
+use webrtc::api::media_engine::MediaEngine;
+use webrtc::api::setting_engine::SettingEngine;
+use webrtc::data_channel::RTCDataChannel;
+use webrtc::peer_connection::RTCPeerConnection;
 use std::io::Read;
 use std::{collections::HashMap, error::Error, io::Write, sync::Arc};
 use tokio::sync::{Mutex, MutexGuard};
@@ -60,73 +64,56 @@ fn compress_signal_packet(op_code: u8, payload_buffer: &[u8]) -> Vec<u8> {
     packet
 }
 
-async fn rtc_offer_shenanigans() -> Result<
-    (
-        Arc<webrtc::peer_connection::RTCPeerConnection>,
-        Arc<Mutex<Vec<RTCIceCandidateInit>>>,
-        Arc<webrtc::data_channel::RTCDataChannel>,
-        Arc<webrtc::data_channel::RTCDataChannel>,
-        Arc<webrtc::data_channel::RTCDataChannel>,
-    ),
-    Box<dyn Error + Send + std::marker::Sync>,
-> {
-    let config: RTCConfiguration = RTCConfiguration {
+struct RtcSession {
+    peer_connection: Arc<RTCPeerConnection>,
+    candidates: Arc<Mutex<Vec<RTCIceCandidateInit>>>,
+    channels: Vec<Arc<RTCDataChannel>>,
+}
+
+async fn rtc_offer_shenanigans() -> Result<RtcSession, Box<dyn Error + Send + Sync>> {
+    let mut m = MediaEngine::default();
+    m.register_default_codecs()?;
+    let api: webrtc::api::API = APIBuilder::new().with_media_engine(m).build();
+
+    let config = RTCConfiguration {
         ice_servers: vec![RTCIceServer {
             urls: vec!["stun:stun.l.google.com:19302".to_string()],
             ..Default::default()
         }],
         ..Default::default()
     };
-    let api: webrtc::api::API = APIBuilder::new()
-        .build();
-
-    let peer_connection: Arc<webrtc::peer_connection::RTCPeerConnection> =
-        Arc::new(api.new_peer_connection(config).await?);
-
+    let peer_connection: Arc<RTCPeerConnection> = Arc::new(api.new_peer_connection(config).await?);
     let candidates = Arc::new(Mutex::new(Vec::new()));
-    let c_clone = Arc::clone(&candidates);
 
+    let c_clone = Arc::clone(&candidates);
     peer_connection.on_ice_candidate(Box::new(move |candidate| {
         let c_clone = Arc::clone(&c_clone);
         Box::pin(async move {
-            if let Some(cand) = candidate {
-                if let Ok(json) = cand.to_json() {
-                    c_clone.lock().await.push(json);
-                }
+            if let Some(Ok(json)) = candidate.map(|c| c.to_json()) {
+                c_clone.lock().await.push(json);
             }
         })
     }));
+    
+    let channel_configs = vec![
+        ("ro", None),
+        ("ru", Some(RTCDataChannelInit { ordered: Some(false), max_retransmits: Some(1), ..Default::default() })),
+        ("uu", Some(RTCDataChannelInit { ordered: Some(false), max_retransmits: Some(0), ..Default::default() })),
+    ];
 
-    // Register data channels
-    let ro = peer_connection.create_data_channel("ro", None).await?;
-    let ru = peer_connection
-        .create_data_channel(
-            "ru",
-            Some(RTCDataChannelInit {
-                ordered: Some(false),
-                max_retransmits: Some(1),
-                ..Default::default()
-            }),
-        )
-        .await?;
-    let uu = peer_connection
-        .create_data_channel(
-            "uu",
-            Some(RTCDataChannelInit {
-                ordered: Some(false),
-                max_retransmits: Some(0),
-                ..Default::default()
-            }),
-        )
-        .await?;
+    let mut channels = Vec::new();
+    for (label, init) in channel_configs {
+        channels.push(peer_connection.create_data_channel(label, init).await?);
+    }
 
     let offer = peer_connection.create_offer(None).await?;
     peer_connection.set_local_description(offer).await?;
-
+    
     let mut gather_complete = peer_connection.gathering_complete_promise().await;
-    gather_complete.recv().await;
-
-    Ok((peer_connection, candidates, ro, ru, uu))
+    let _ = gather_complete.recv().await;
+    let _final_sdp = peer_connection.local_description().await.ok_or("...")?.sdp;
+    
+    Ok(RtcSession { peer_connection, candidates, channels })
 }
 
 #[async_trait]
@@ -134,113 +121,47 @@ impl ezsockets::ClientExt for Client {
     type Call = Vec<u8>;
 
     async fn on_connect(&mut self) -> Result<(), ezsockets::Error> {
-        let result: (
-            Arc<webrtc::peer_connection::RTCPeerConnection>,
-            Arc<Mutex<Vec<RTCIceCandidateInit>>>,
-            Arc<webrtc::data_channel::RTCDataChannel>,
-            Arc<webrtc::data_channel::RTCDataChannel>,
-            Arc<webrtc::data_channel::RTCDataChannel>,
-        ) = rtc_offer_shenanigans().await?;
+        let session: RtcSession = rtc_offer_shenanigans().await?;
+        
+        for dc in &session.channels {
+            let label: String = dc.label().to_owned();
+            
+            dc.on_open(Box::new(move || {
+                println!("Data channel {label} is now open!");
+                Box::pin(async {})
+            }));
 
-        let (peer_connection, candidates) = (result.0, result.1);
-        self.state.ro_datachannel = Some(result.2);
-        self.state.ru_datachannel = Some(result.3);
-        self.state.uu_datachannel = Some(result.4);
-        self.state.peer_connection = Some(peer_connection);
+            dc.on_message(Box::new(move |msg| {
+                let payload = String::from_utf8_lossy(&msg.data);
+                println!("Received message: {payload}");
+                Box::pin(async {})
+            }));
 
-        if let None = self.state.uu_datachannel {
-            return Err("UU DataChannel was not initialized.".into());
+            match dc.label() {
+                "ro" => self.state.ro_datachannel = Some(Arc::clone(dc)),
+                "ru" => self.state.ru_datachannel = Some(Arc::clone(dc)),
+                "uu" => self.state.uu_datachannel = Some(Arc::clone(dc)),
+                _ => {}
+            }
         }
-        if let None = self.state.ru_datachannel {
-            return Err("RU DataChannel was not initialized.".into());
-        }
-        if let None = self.state.ro_datachannel {
-            return Err("RO DataChannel was not initialized.".into());
-        }
 
-        let uu_datachanel = self.state.uu_datachannel.as_mut().unwrap();
-        let ru_datachanel = self.state.ru_datachannel.as_mut().unwrap();
-        let ro_datachanel = self.state.ro_datachannel.as_mut().unwrap();
+        self.state.peer_connection = Some(session.peer_connection);
 
-        let dc_uu_label = uu_datachanel.label().to_owned();
-        uu_datachanel.on_open(Box::new(move || {
-            println!("Data channel {dc_uu_label} is now open!!!");
-            Box::pin(async {})
-        }));
+        if let Some(pc) = &self.state.peer_connection {
+            let sdp_offer: String = pc.local_description().await.ok_or("No local description. :(")?.sdp;
+            let candidates = session.candidates.lock().await;
 
-        uu_datachanel.on_message(Box::new(move |msg| {
-            let payload = String::from_utf8_lossy(&msg.data);
-            println!("Received message: {}", payload);
-            Box::pin(async {})
-        }));
-
-        let dc_ru_label = ru_datachanel.label().to_owned();
-        ru_datachanel.on_open(Box::new(move || {
-            println!("Data channel {dc_ru_label} is now open!!!");
-            Box::pin(async {})
-        }));
-
-        ru_datachanel.on_message(Box::new(move |msg| {
-            let payload = String::from_utf8_lossy(&msg.data);
-            println!("Received message: {}", payload);
-            Box::pin(async {})
-        }));
-
-        let dc_ro_label = ro_datachanel.label().to_owned();
-        let dc_clone = Arc::clone(&ro_datachanel);
-        ro_datachanel.on_open(Box::new(move || {
-            println!("Data channel {dc_ro_label} is now open!");
-            Box::pin(async move {})
-        }));
-
-        ro_datachanel.on_message(Box::new(move |msg| {
-            let payload = String::from_utf8_lossy(&msg.data);
-            let dc_clone = Arc::clone(&dc_clone);
-            println!("Received message: {}", payload);
-            Box::pin(async move {
-                let mut user_info = BinaryEncoder::new(false);
-                user_info.w_str(&cfg_val!(USERNAME));
-                user_info.w_str(&cfg_val!(COUNTRY));
-                user_info.w_nullable_str(Some(&cfg_val!(AVATAR)));
-
-                let mut data = BinaryEncoder::new(false);
-                data.w_u8(0);
-                // Here, ideally i would write a byte that is the hex code indicating the full length of the idkey.x + signing challenge
-                // let mut cryptography_data = BinaryEncoder::new(false);
-                // cryptography_data.w_str(&cfg_val!(IDKEY).x)
-                // cryptography_data.w_u8(crypto_challenge.bytes().len() as u8)
-                // cryptography_data.append_bytes(crypto_challenge.bytes()) // append_byte doesnt manage specifying the length of the added data, must manage that ourselves
-                // Then just write all that.
-                // And write the length of the user_info along with the user info.
-                // data.w_u8(user_info.bytes().len() as u8);
-                // data.append_bytes(user_info.bytes());
-
-                let data = bytes::Bytes::copy_from_slice(data.bytes());
-                // println!("Sending player data through dc_{dc_ro_label}");
-                if let Err(e) = dc_clone.send(&data).await {println!("Failed to send player data: {:?}", e)}
-            })
-        }));
-
-        if let Some(p) = &self.state.peer_connection {
-            let final_sdp: RTCSessionDescription =
-                p.local_description().await.ok_or("No local description")?;
-                println!("{}", final_sdp.sdp);
-            let offer_sdp: String = final_sdp.sdp;
-            let final_candidates: MutexGuard<'_, Vec<RTCIceCandidateInit>> =
-                candidates.lock().await;
-
-            let mut payload: BinaryEncoder = BinaryEncoder::new(true);
+            let mut payload = BinaryEncoder::new(true);
             payload.w_u8(0x00);
-            payload.w_str(&offer_sdp);
-            payload.w_json(&*final_candidates);
-            payload.w_u16(0x0900); // version
+            payload.w_str(&sdp_offer);
+            payload.w_json(&*candidates);
+            payload.w_u16(0x0900);
             payload.w_nullable_str(None);
 
             self.handle.binary(compress_signal_packet(1, &payload.data)).unwrap();
-
             Ok(())
         } else {
-            Err("Something went Exceptionally Wrong!".into())
+            Err("Peer connection missing".into())
         }
     }
 
@@ -250,14 +171,14 @@ impl ezsockets::ClientExt for Client {
     }
 
     async fn on_binary(&mut self, bytes: ezsockets::Bytes) -> Result<(), ezsockets::Error> {
-        let decoded_bytes = decode_signal_packet(&bytes);
-        let mut payload = BinaryDecoder::new(&decoded_bytes.1, false);
-        let offer_sdp = payload.r_str();
-        println!("{}", offer_sdp);
+        let decoded_bytes: (u8, Vec<u8>) = decode_signal_packet(&bytes);
+        let mut payload: BinaryDecoder<'_> = BinaryDecoder::new(&decoded_bytes.1, false);
+        let answer_sdp: String = payload.r_str();
+        println!("Received Answer SDP: {}", answer_sdp);
         let candidates_json_list: Vec<IceCandidateJson> = payload.r_json();
 
         if let Some(peer_connection) = &self.state.peer_connection {
-            let desc = RTCSessionDescription::answer(offer_sdp)?;
+            let desc = RTCSessionDescription::answer(answer_sdp)?;
             peer_connection.set_remote_description(desc).await?;
 
             for c in candidates_json_list {
@@ -299,7 +220,8 @@ pub async fn request_room_join(
             // ehh good enough
             .header(
                 "User-agent",
-                "Mozilla/5.0 (X11; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0", // "Mozilla/5.0 (raylib; Linux x86_64; rv:147.0) HaxBall Rayball Client",
+                // "Mozilla/5.0 (X11; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0", 
+                "Mozilla/5.0 (raylib; Linux x86_64; rv:147.0) HaxBall Rayball Client",
             )
             .header("Host", "p2p.haxball.com")
             .header("Origin", "https://www.haxball.com");
